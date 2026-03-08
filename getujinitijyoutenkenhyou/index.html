@@ -28,15 +28,17 @@
             <h2>基本情報</h2>
           </div>
 
-          <label class="field">
+          <div class="field">
             <span>車番</span>
-            <input id="vehicleInput" name="vehicle" type="text" inputmode="text" autocomplete="off" placeholder="例: 68-67" />
-          </label>
+            <div id="vehicleDisplay" class="entry-value is-placeholder">未選択</div>
+          </div>
 
-          <label class="field">
+          <div class="field">
             <span>運転者（点検者）</span>
-            <input id="driverInput" name="driver" type="text" inputmode="text" autocomplete="name" placeholder="例: 田中" />
-          </label>
+            <div id="driverDisplay" class="entry-value is-placeholder">未選択</div>
+          </div>
+
+          <p class="entry-note">車番と運転者はランチャーの設定で選択します。</p>
 
           <div class="entry-actions">
             <button id="startButton" class="button button-primary" type="submit">点検開始</button>
@@ -93,6 +95,7 @@
     </section>
   </main>
 
+  <script src="../shared-settings.js"></script>
   <script src="./firebase-config.js?v=20260307-3"></script>
   <script src="./app.js?v=20260307-3"></script>
 </body>

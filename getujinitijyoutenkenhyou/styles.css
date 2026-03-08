@@ -163,6 +163,29 @@ h1 {
   font-weight: 700;
 }
 
+.entry-value {
+  display: flex;
+  align-items: center;
+  min-height: 52px;
+  padding: 0 16px;
+  border-radius: 16px;
+  border: 1px solid rgba(86, 98, 108, 0.28);
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7);
+  font-weight: 700;
+}
+
+.entry-value.is-placeholder {
+  color: var(--muted);
+  font-weight: 400;
+}
+
+.entry-note {
+  margin: -4px 0 16px;
+  color: var(--muted);
+  line-height: 1.6;
+}
+
 .field input {
   height: 52px;
   padding: 0 16px;

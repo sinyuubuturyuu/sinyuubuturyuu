@@ -1820,7 +1820,9 @@
           void exportCsv();
         });
         el.quickResetBtn.addEventListener("click", resetCurrent);
-        el.openSettingsBtn.addEventListener("click", openSettingsDialog);
+        if (el.openSettingsBtn) {
+          el.openSettingsBtn.addEventListener("click", openSettingsDialog);
+        }
         el.closeSettingsBtn.addEventListener("click", closeSettingsDialog);
         el.themeMode.addEventListener("change", (ev) => setTheme(ev.target.value));
         el.addVehicleBtn.addEventListener("click", addVehicleNumber);

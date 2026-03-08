@@ -1,11 +1,17 @@
-const STORAGE_KEY = "sinyuubuturyuu-launcher-settings";
-
-const DEFAULT_SETTINGS = {
+const APP_CONFIG = {
   app1Name: "月次タイヤ点検表",
   app1Path: "./getjityretenkenhyou/index.html",
   app2Name: "月次日常点検表",
   app2Path: "./getujinitijyoutenkenhyou/index.html",
 };
+
+const SETTINGS_BACKUP_KIND = Object.freeze({
+  VEHICLES: "vehicles",
+  DRIVERS: "drivers",
+});
+
+const SETTINGS_BACKUP_SLOT = 1;
+const sharedSettings = window.SharedLauncherSettings;
 
 const elements = {
   app1Button: document.getElementById("app1Button"),
@@ -14,81 +20,231 @@ const elements = {
   settingsDialog: document.getElementById("settingsDialog"),
   settingsForm: document.getElementById("settingsForm"),
   closeSettingsButton: document.getElementById("closeSettingsButton"),
-  resetSettingsButton: document.getElementById("resetSettingsButton"),
+  themeMode: document.getElementById("themeMode"),
+  newVehicleNumber: document.getElementById("newVehicleNumber"),
+  addVehicleBtn: document.getElementById("addVehicleBtn"),
+  saveVehicleBackupBtn: document.getElementById("saveVehicleBackupBtn"),
+  restoreVehicleBackupBtn: document.getElementById("restoreVehicleBackupBtn"),
+  deleteVehicleBackupBtn: document.getElementById("deleteVehicleBackupBtn"),
+  vehicleBackupStatus: document.getElementById("vehicleBackupStatus"),
+  vehicleList: document.getElementById("vehicleList"),
+  newDriverName: document.getElementById("newDriverName"),
+  newDriverReading: document.getElementById("newDriverReading"),
+  addDriverBtn: document.getElementById("addDriverBtn"),
+  saveDriverBackupBtn: document.getElementById("saveDriverBackupBtn"),
+  restoreDriverBackupBtn: document.getElementById("restoreDriverBackupBtn"),
+  deleteDriverBackupBtn: document.getElementById("deleteDriverBackupBtn"),
+  driverBackupStatus: document.getElementById("driverBackupStatus"),
+  driverList: document.getElementById("driverList"),
+  newTruckType: document.getElementById("newTruckType"),
+  addTruckTypeBtn: document.getElementById("addTruckTypeBtn"),
+  truckTypeList: document.getElementById("truckTypeList"),
   settingsStatus: document.getElementById("settingsStatus"),
-  app1Name: document.getElementById("app1Name"),
-  app1Path: document.getElementById("app1Path"),
-  app2Name: document.getElementById("app2Name"),
-  app2Path: document.getElementById("app2Path"),
 };
 
-let currentSettings = loadSettings();
+const state = {
+  shared: sharedSettings.ensureState(),
+  backupMeta: {
+    [SETTINGS_BACKUP_KIND.VEHICLES]: null,
+    [SETTINGS_BACKUP_KIND.DRIVERS]: null,
+  },
+  cloudReady: false,
+  backupLoading: false,
+  backupWorking: false,
+};
 
-render();
+renderAll();
 bindEvents();
 registerServiceWorker();
+void initializeCloudSync();
 
-function loadSettings() {
-  try {
-    const saved = window.localStorage.getItem(STORAGE_KEY);
-    if (!saved) {
-      return { ...DEFAULT_SETTINGS };
-    }
-    return { ...DEFAULT_SETTINGS, ...JSON.parse(saved) };
-  } catch (error) {
-    return { ...DEFAULT_SETTINGS };
+function refreshSharedState() {
+  state.shared = sharedSettings.ensureState();
+}
+
+function renderAll() {
+  refreshSharedState();
+  applyTheme();
+  renderLauncherButtons();
+  renderSettings();
+  renderBackupControls();
+}
+
+function renderLauncherButtons() {
+  elements.app1Button.textContent = APP_CONFIG.app1Name;
+  elements.app2Button.textContent = APP_CONFIG.app2Name;
+}
+
+function renderSettings() {
+  elements.themeMode.value = state.shared.theme;
+  renderVehicleList();
+  renderDriverList();
+  renderTruckTypeCatalogSelect();
+  renderTruckTypeList();
+  renderBackupStatus(SETTINGS_BACKUP_KIND.VEHICLES);
+  renderBackupStatus(SETTINGS_BACKUP_KIND.DRIVERS);
+}
+
+function applyTheme() {
+  document.documentElement.setAttribute("data-theme", state.shared.theme === "dark" ? "dark" : "light");
+}
+
+function renderVehicleList() {
+  renderValueList({
+    container: elements.vehicleList,
+    rows: state.shared.vehicles,
+    currentValue: state.shared.current.vehicleNumber,
+    labelFor: (value) => value,
+    onSelect: (value) => setCurrentVehicleNumber(value),
+    onRemove: (value) => removeVehicleNumber(value),
+  });
+}
+
+function renderDriverList() {
+  renderValueList({
+    container: elements.driverList,
+    rows: state.shared.drivers,
+    currentValue: state.shared.current.driverName,
+    labelFor: (value) => sharedSettings.normalizeDriverName(value),
+    currentKeyFor: (value) => sharedSettings.normalizeDriverName(value),
+    onSelect: (value) => setCurrentDriverName(value),
+    onRemove: (value) => removeDriverName(value),
+  });
+}
+
+function renderTruckTypeCatalogSelect() {
+  const options = sharedSettings.TRUCK_TYPE_CATALOG.filter(
+    (item) => !state.shared.truckTypes.includes(item.value)
+  );
+
+  elements.newTruckType.innerHTML = "";
+  if (!options.length) {
+    elements.newTruckType.appendChild(new Option("登録できる車種はありません", ""));
+    elements.newTruckType.value = "";
+    elements.addTruckTypeBtn.disabled = true;
+    return;
   }
+
+  elements.newTruckType.appendChild(new Option("選択してください", ""));
+  options.forEach((item) => {
+    elements.newTruckType.appendChild(new Option(item.label, item.value));
+  });
+  elements.newTruckType.value = "";
+  elements.addTruckTypeBtn.disabled = false;
 }
 
-function saveSettings(nextSettings) {
-  currentSettings = { ...DEFAULT_SETTINGS, ...nextSettings };
-  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(currentSettings));
-  render();
+function renderTruckTypeList() {
+  renderValueList({
+    container: elements.truckTypeList,
+    rows: state.shared.truckTypes,
+    currentValue: state.shared.current.truckType,
+    labelFor: (value) => sharedSettings.truckTypeLabel(value),
+    onSelect: (value) => setCurrentTruckType(value),
+    onRemove: (value) => removeTruckType(value),
+  });
 }
 
-function render() {
-  elements.app1Button.textContent = currentSettings.app1Name;
-  elements.app2Button.textContent = currentSettings.app2Name;
-  elements.app1Name.value = currentSettings.app1Name;
-  elements.app1Path.value = currentSettings.app1Path;
-  elements.app2Name.value = currentSettings.app2Name;
-  elements.app2Path.value = currentSettings.app2Path;
+function renderValueList({
+  container,
+  rows,
+  currentValue,
+  labelFor,
+  onSelect,
+  onRemove,
+  currentKeyFor = (value) => value,
+}) {
+  container.innerHTML = "";
+
+  if (!rows.length) {
+    const empty = document.createElement("div");
+    empty.className = "empty-list";
+    empty.textContent = "まだ登録されていません。";
+    container.appendChild(empty);
+    return;
+  }
+
+  rows.forEach((value) => {
+    const row = document.createElement("div");
+    const isCurrent = currentKeyFor(value) === currentValue;
+    row.className = `value-item${isCurrent ? " current" : ""}`;
+
+    const label = document.createElement("span");
+    label.className = "value-label";
+    label.textContent = labelFor(value);
+
+    const actions = document.createElement("div");
+    actions.className = "value-actions";
+
+    const selectButton = document.createElement("button");
+    selectButton.type = "button";
+    selectButton.className = "mini-button primary";
+    selectButton.textContent = isCurrent ? "選択中" : "表示";
+    selectButton.disabled = isCurrent;
+    selectButton.addEventListener("click", () => onSelect(value));
+
+    const removeButton = document.createElement("button");
+    removeButton.type = "button";
+    removeButton.className = "mini-button";
+    removeButton.textContent = "削除";
+    removeButton.addEventListener("click", () => onRemove(value));
+
+    actions.appendChild(selectButton);
+    actions.appendChild(removeButton);
+    row.appendChild(label);
+    row.appendChild(actions);
+    container.appendChild(row);
+  });
+}
+
+function renderBackupStatus(kind) {
+  const element = kind === SETTINGS_BACKUP_KIND.VEHICLES
+    ? elements.vehicleBackupStatus
+    : elements.driverBackupStatus;
+
+  if (!state.cloudReady) {
+    element.textContent = "バックアップ: 利用できません";
+    return;
+  }
+
+  if (state.backupLoading) {
+    element.textContent = "バックアップ: 読み込み中";
+    return;
+  }
+
+  const entry = state.backupMeta[kind];
+  if (!entry) {
+    element.textContent = "バックアップ: 未保存";
+    return;
+  }
+
+  const updatedAt = entry.serverUpdatedAt || entry.clientUpdatedAt;
+  const updatedText = updatedAt ? formatDateTimeMinute(updatedAt) : "日時不明";
+  element.textContent = `バックアップ: ${updatedText} / ${entry.valueCount}件`;
+}
+
+function renderBackupControls() {
+  const disabledBase = state.backupWorking || !state.cloudReady;
+  elements.saveVehicleBackupBtn.disabled = disabledBase || !state.shared.vehicles.length;
+  elements.restoreVehicleBackupBtn.disabled = disabledBase || !state.backupMeta[SETTINGS_BACKUP_KIND.VEHICLES];
+  elements.deleteVehicleBackupBtn.disabled = disabledBase || !state.backupMeta[SETTINGS_BACKUP_KIND.VEHICLES];
+  elements.saveDriverBackupBtn.disabled = disabledBase || !state.shared.drivers.length;
+  elements.restoreDriverBackupBtn.disabled = disabledBase || !state.backupMeta[SETTINGS_BACKUP_KIND.DRIVERS];
+  elements.deleteDriverBackupBtn.disabled = disabledBase || !state.backupMeta[SETTINGS_BACKUP_KIND.DRIVERS];
 }
 
 function bindEvents() {
-  elements.app1Button.addEventListener("click", () => openApp(currentSettings.app1Path));
-  elements.app2Button.addEventListener("click", () => openApp(currentSettings.app2Path));
+  elements.app1Button.addEventListener("click", () => openApp(APP_CONFIG.app1Path));
+  elements.app2Button.addEventListener("click", () => openApp(APP_CONFIG.app2Path));
 
   elements.settingsButton.addEventListener("click", () => {
-    elements.settingsStatus.textContent = "";
+    clearStatus();
+    renderAll();
     elements.settingsDialog.showModal();
+    void refreshSettingsBackups();
   });
 
-  elements.closeSettingsButton.addEventListener("click", () => {
-    elements.settingsDialog.close();
-  });
-
-  elements.resetSettingsButton.addEventListener("click", () => {
-    saveSettings(DEFAULT_SETTINGS);
-    elements.settingsStatus.textContent = "初期値に戻しました。";
-  });
-
-  elements.settingsForm.addEventListener("submit", (event) => {
-    event.preventDefault();
-
-    const nextSettings = {
-      app1Name: elements.app1Name.value.trim() || DEFAULT_SETTINGS.app1Name,
-      app1Path: normalizePath(elements.app1Path.value, DEFAULT_SETTINGS.app1Path),
-      app2Name: elements.app2Name.value.trim() || DEFAULT_SETTINGS.app2Name,
-      app2Path: normalizePath(elements.app2Path.value, DEFAULT_SETTINGS.app2Path),
-    };
-
-    saveSettings(nextSettings);
-    elements.settingsStatus.textContent = "設定を保存しました。";
-    window.setTimeout(() => {
-      elements.settingsDialog.close();
-    }, 350);
-  });
+  elements.closeSettingsButton.addEventListener("click", closeSettingsDialog);
+  elements.settingsForm.addEventListener("submit", (event) => event.preventDefault());
 
   elements.settingsDialog.addEventListener("click", (event) => {
     const rect = elements.settingsDialog.getBoundingClientRect();
@@ -99,14 +255,388 @@ function bindEvents() {
       event.clientX <= rect.left + rect.width;
 
     if (!isInDialog) {
-      elements.settingsDialog.close();
+      closeSettingsDialog();
     }
+  });
+
+  elements.themeMode.addEventListener("change", (event) => {
+    sharedSettings.saveTheme(event.target.value);
+    renderAll();
+    setStatus("表示モードを更新しました。");
+  });
+
+  elements.addVehicleBtn.addEventListener("click", addVehicleNumber);
+  elements.newVehicleNumber.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter") return;
+    event.preventDefault();
+    addVehicleNumber();
+  });
+
+  elements.addDriverBtn.addEventListener("click", addDriverName);
+  elements.newDriverName.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter") return;
+    event.preventDefault();
+    if (!String(elements.newDriverReading.value || "").trim()) {
+      elements.newDriverReading.focus();
+      return;
+    }
+    addDriverName();
+  });
+  elements.newDriverReading.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter") return;
+    event.preventDefault();
+    addDriverName();
+  });
+
+  elements.addTruckTypeBtn.addEventListener("click", addTruckType);
+
+  elements.saveVehicleBackupBtn.addEventListener("click", () => {
+    void saveSettingsBackup(SETTINGS_BACKUP_KIND.VEHICLES);
+  });
+  elements.restoreVehicleBackupBtn.addEventListener("click", () => {
+    void restoreSettingsBackup(SETTINGS_BACKUP_KIND.VEHICLES);
+  });
+  elements.deleteVehicleBackupBtn.addEventListener("click", () => {
+    void deleteSettingsBackup(SETTINGS_BACKUP_KIND.VEHICLES);
+  });
+
+  elements.saveDriverBackupBtn.addEventListener("click", () => {
+    void saveSettingsBackup(SETTINGS_BACKUP_KIND.DRIVERS);
+  });
+  elements.restoreDriverBackupBtn.addEventListener("click", () => {
+    void restoreSettingsBackup(SETTINGS_BACKUP_KIND.DRIVERS);
+  });
+  elements.deleteDriverBackupBtn.addEventListener("click", () => {
+    void deleteSettingsBackup(SETTINGS_BACKUP_KIND.DRIVERS);
   });
 }
 
-function normalizePath(value, fallback) {
-  const trimmed = value.trim();
-  return trimmed || fallback;
+function closeSettingsDialog() {
+  elements.settingsDialog.close();
+}
+
+function clearStatus() {
+  elements.settingsStatus.textContent = "";
+}
+
+function setStatus(message) {
+  elements.settingsStatus.textContent = message;
+}
+
+function setCurrentVehicleNumber(value) {
+  sharedSettings.updateCurrent({ vehicleNumber: value });
+  renderAll();
+  setStatus("車両番号を更新しました。");
+}
+
+function setCurrentDriverName(value) {
+  sharedSettings.updateCurrent({ driverName: value });
+  renderAll();
+  setStatus("乗務員を更新しました。");
+}
+
+function setCurrentTruckType(value) {
+  sharedSettings.updateCurrent({ truckType: value });
+  renderAll();
+  setStatus("車種を更新しました。");
+}
+
+function addVehicleNumber() {
+  const value = String(elements.newVehicleNumber.value || "").trim();
+  if (!value) {
+    setStatus("車両番号を入力してください。");
+    return;
+  }
+
+  if (state.shared.vehicles.includes(value)) {
+    setStatus("同じ車両番号は登録済みです。");
+    return;
+  }
+
+  const nextVehicles = state.shared.vehicles.concat(value).sort((left, right) => left.localeCompare(right, "ja"));
+  sharedSettings.saveVehicles(nextVehicles);
+  elements.newVehicleNumber.value = "";
+  renderAll();
+  setStatus("車両番号を登録しました。");
+}
+
+function removeVehicleNumber(value) {
+  if (!window.confirm(`「${value}」を削除しますか？`)) {
+    return;
+  }
+  sharedSettings.saveVehicles(state.shared.vehicles.filter((entry) => entry !== value));
+  renderAll();
+  setStatus("車両番号を削除しました。");
+}
+
+function addDriverName() {
+  const rawName = String(elements.newDriverName.value || "").trim();
+  const rawReading = String(elements.newDriverReading.value || "").trim();
+  const driverName = sharedSettings.normalizeDriverName(rawName);
+
+  if (!driverName) {
+    setStatus("乗務員名（漢字）を入力してください。");
+    return;
+  }
+
+  const normalizedEntry = sharedSettings.normalizeDriverEntry(
+    rawReading ? `${driverName}（${rawReading}）` : driverName
+  );
+  const existingIndex = state.shared.drivers.findIndex(
+    (entry) => sharedSettings.normalizeDriverName(entry) === driverName
+  );
+
+  if (existingIndex >= 0) {
+    if (state.shared.drivers[existingIndex] === normalizedEntry) {
+      setStatus("同じ乗務員は登録済みです。");
+      return;
+    }
+
+    const nextDrivers = state.shared.drivers.slice();
+    nextDrivers.splice(existingIndex, 1, normalizedEntry);
+    sharedSettings.saveDrivers(nextDrivers);
+    elements.newDriverName.value = "";
+    elements.newDriverReading.value = "";
+    renderAll();
+    setStatus("乗務員の読みを更新しました。");
+    return;
+  }
+
+  sharedSettings.saveDrivers(state.shared.drivers.concat(normalizedEntry));
+  elements.newDriverName.value = "";
+  elements.newDriverReading.value = "";
+  renderAll();
+  setStatus("乗務員を登録しました。");
+}
+
+function removeDriverName(value) {
+  const label = sharedSettings.normalizeDriverName(value);
+  if (!window.confirm(`「${label}」を削除しますか？`)) {
+    return;
+  }
+  sharedSettings.saveDrivers(state.shared.drivers.filter((entry) => entry !== value));
+  renderAll();
+  setStatus("乗務員を削除しました。");
+}
+
+function addTruckType() {
+  const value = String(elements.newTruckType.value || "").trim();
+  if (!value) {
+    setStatus("車種を選択してください。");
+    return;
+  }
+
+  if (state.shared.truckTypes.includes(value)) {
+    setStatus("同じ車種は登録済みです。");
+    return;
+  }
+
+  sharedSettings.saveTruckTypes(state.shared.truckTypes.concat(value));
+  renderAll();
+  setStatus("車種を登録しました。");
+}
+
+function removeTruckType(value) {
+  if (state.shared.truckTypes.length <= 1) {
+    setStatus("車種は1件以上必要です。");
+    return;
+  }
+  if (!window.confirm(`「${sharedSettings.truckTypeLabel(value)}」を削除しますか？`)) {
+    return;
+  }
+  sharedSettings.saveTruckTypes(state.shared.truckTypes.filter((entry) => entry !== value));
+  renderAll();
+  setStatus("車種を削除しました。");
+}
+
+async function initializeCloudSync() {
+  if (!window.FirebaseCloudSync || typeof window.FirebaseCloudSync.init !== "function") {
+    renderBackupControls();
+    return;
+  }
+
+  try {
+    await window.FirebaseCloudSync.init({
+      getPayload: buildCloudPayload,
+    });
+    state.cloudReady = typeof window.FirebaseCloudSync.isEnabled === "function"
+      ? window.FirebaseCloudSync.isEnabled()
+      : true;
+  } catch (error) {
+    console.warn("Failed to initialize Firebase cloud sync:", error);
+    state.cloudReady = false;
+  }
+
+  renderAll();
+  if (state.cloudReady) {
+    void refreshSettingsBackups();
+  }
+}
+
+function buildCloudPayload() {
+  const current = state.shared.current;
+  return {
+    current: {
+      inspectionDate: todayText(),
+      driverName: current.driverName || "",
+      vehicleNumber: current.vehicleNumber || "",
+      truckType: current.truckType || sharedSettings.TRUCK_TYPES.LOW12,
+    },
+  };
+}
+
+async function refreshSettingsBackups() {
+  if (!state.cloudReady || typeof window.FirebaseCloudSync.loadSettingsBackup !== "function") {
+    return;
+  }
+
+  state.backupLoading = true;
+  renderSettings();
+  renderBackupControls();
+
+  try {
+    const [vehicleResult, driverResult] = await Promise.all([
+      window.FirebaseCloudSync.loadSettingsBackup(SETTINGS_BACKUP_KIND.VEHICLES, SETTINGS_BACKUP_SLOT, { metadataOnly: true }),
+      window.FirebaseCloudSync.loadSettingsBackup(SETTINGS_BACKUP_KIND.DRIVERS, SETTINGS_BACKUP_SLOT, { metadataOnly: true }),
+    ]);
+
+    state.backupMeta[SETTINGS_BACKUP_KIND.VEHICLES] = vehicleResult.ok ? vehicleResult.backup : null;
+    state.backupMeta[SETTINGS_BACKUP_KIND.DRIVERS] = driverResult.ok ? driverResult.backup : null;
+  } catch (error) {
+    console.warn("Failed to refresh settings backups:", error);
+  } finally {
+    state.backupLoading = false;
+    renderSettings();
+    renderBackupControls();
+  }
+}
+
+async function saveSettingsBackup(kind) {
+  if (!state.cloudReady || typeof window.FirebaseCloudSync.saveSettingsBackup !== "function") {
+    setStatus("バックアップは利用できません。");
+    return;
+  }
+
+  const values = kind === SETTINGS_BACKUP_KIND.VEHICLES ? state.shared.vehicles : state.shared.drivers;
+  if (!values.length) {
+    setStatus("保存する設定がありません。");
+    return;
+  }
+
+  state.backupWorking = true;
+  renderBackupControls();
+
+  try {
+    const result = await window.FirebaseCloudSync.saveSettingsBackup(
+      kind,
+      SETTINGS_BACKUP_SLOT,
+      values,
+      { source: "launcher" }
+    );
+
+    if (!result.ok || !result.backup) {
+      setStatus("バックアップの保存に失敗しました。");
+      return;
+    }
+
+    state.backupMeta[kind] = result.backup;
+    renderSettings();
+    setStatus("バックアップを保存しました。");
+  } catch (error) {
+    console.warn("Failed to save settings backup:", error);
+    setStatus("バックアップの保存に失敗しました。");
+  } finally {
+    state.backupWorking = false;
+    renderBackupControls();
+  }
+}
+
+async function restoreSettingsBackup(kind) {
+  if (!state.cloudReady || typeof window.FirebaseCloudSync.loadSettingsBackup !== "function") {
+    setStatus("バックアップは利用できません。");
+    return;
+  }
+
+  state.backupWorking = true;
+  renderBackupControls();
+
+  try {
+    const result = await window.FirebaseCloudSync.loadSettingsBackup(kind, SETTINGS_BACKUP_SLOT);
+    if (!result.ok || !result.backup) {
+      setStatus("バックアップの復元に失敗しました。");
+      return;
+    }
+
+    if (kind === SETTINGS_BACKUP_KIND.VEHICLES) {
+      sharedSettings.saveVehicles(result.backup.values);
+    } else {
+      sharedSettings.saveDrivers(result.backup.values);
+    }
+
+    state.backupMeta[kind] = result.backup;
+    renderAll();
+    setStatus("バックアップを復元しました。");
+  } catch (error) {
+    console.warn("Failed to restore settings backup:", error);
+    setStatus("バックアップの復元に失敗しました。");
+  } finally {
+    state.backupWorking = false;
+    renderBackupControls();
+  }
+}
+
+async function deleteSettingsBackup(kind) {
+  if (!state.cloudReady || typeof window.FirebaseCloudSync.deleteSettingsBackup !== "function") {
+    setStatus("バックアップは利用できません。");
+    return;
+  }
+
+  if (!window.confirm("バックアップを削除しますか？")) {
+    return;
+  }
+
+  state.backupWorking = true;
+  renderBackupControls();
+
+  try {
+    const result = await window.FirebaseCloudSync.deleteSettingsBackup(kind, SETTINGS_BACKUP_SLOT);
+    if (!result.ok) {
+      setStatus("バックアップの削除に失敗しました。");
+      return;
+    }
+
+    state.backupMeta[kind] = null;
+    renderSettings();
+    setStatus("バックアップを削除しました。");
+  } catch (error) {
+    console.warn("Failed to delete settings backup:", error);
+    setStatus("バックアップの削除に失敗しました。");
+  } finally {
+    state.backupWorking = false;
+    renderBackupControls();
+  }
+}
+
+function todayText() {
+  const date = new Date();
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function formatDateTimeMinute(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
+
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  const hours = String(date.getHours()).padStart(2, "0");
+  const minutes = String(date.getMinutes()).padStart(2, "0");
+  return `${year}-${month}-${day} ${hours}:${minutes}`;
 }
 
 function openApp(path) {

@@ -11,6 +11,7 @@ const STORAGE_NAMESPACE = "monthly_inspection_app_v1";
 const FIREBASE_REQUIRED_KEYS = ["apiKey", "authDomain", "projectId", "appId"];
 const INSPECTION_GUIDE_MESSAGE = "空欄 → レ → × → ▲　未入力日のみ表示しています。休みの日は日付を押してOKをタップしてください。上の送信ボタンで保存します。";
 const APP_VERSION = "20260307-3";
+const sharedSettings = window.SharedLauncherSettings || null;
 
 const INSPECTION_GROUPS = [
   {
@@ -88,8 +89,8 @@ const elements = {
   entryScreen: document.getElementById("entryScreen"),
   inspectionScreen: document.getElementById("inspectionScreen"),
   entryForm: document.getElementById("entryForm"),
-  vehicleInput: document.getElementById("vehicleInput"),
-  driverInput: document.getElementById("driverInput"),
+  vehicleDisplay: document.getElementById("vehicleDisplay"),
+  driverDisplay: document.getElementById("driverDisplay"),
   startButton: document.getElementById("startButton"),
   backButton: document.getElementById("backButton"),
   sendButton: document.getElementById("sendButton"),
@@ -108,6 +109,10 @@ const elements = {
 
 const state = {
   session: null,
+  sharedSelection: {
+    vehicle: "",
+    driver: ""
+  },
   recordsByMonth: {},
   targetMonth: "",
   pendingDays: [],
@@ -122,6 +127,7 @@ elements.backButton.addEventListener("click", handleBack);
 elements.sendButton.addEventListener("click", handleSend);
 elements.tableHead.addEventListener("click", handleDayHeadTap);
 elements.tableBody.addEventListener("click", handleCheckTap);
+document.addEventListener("visibilitychange", handleVisibilityChange);
 
 boot().catch((error) => {
   setEntryStatus(`初期化に失敗しました: ${error.message}`, true);
@@ -130,6 +136,7 @@ boot().catch((error) => {
 async function boot() {
   await clearLegacyCaches();
   state.store = await createStore();
+  refreshSharedSelection();
   elements.startButton.disabled = false;
 }
 
@@ -137,11 +144,12 @@ async function handleStart(event) {
   event.preventDefault();
   clearEntryStatus();
 
-  const vehicle = elements.vehicleInput.value.trim();
-  const driver = elements.driverInput.value.trim();
+  refreshSharedSelection();
+  const vehicle = state.sharedSelection.vehicle;
+  const driver = state.sharedSelection.driver;
 
   if (!vehicle || !driver) {
-    setEntryStatus("車番と運転者（点検者）を入力してください。", true);
+    setEntryStatus("ランチャーの設定で車番と運転者（点検者）を選択してください。", true);
     return;
   }
 
@@ -164,7 +172,16 @@ async function handleStart(event) {
 
 function handleBack() {
   clearInspectionStatus();
+  state.session = null;
+  refreshSharedSelection();
   switchScreen("entry");
+}
+
+function handleVisibilityChange() {
+  if (document.visibilityState !== "visible" || state.session) {
+    return;
+  }
+  refreshSharedSelection();
 }
 
 async function handleSend() {
@@ -506,6 +523,31 @@ function switchScreen(mode) {
   const showingInspection = mode === "inspection";
   elements.entryScreen.hidden = showingInspection;
   elements.inspectionScreen.hidden = !showingInspection;
+}
+
+function refreshSharedSelection() {
+  if (!sharedSettings || typeof sharedSettings.ensureState !== "function") {
+    state.sharedSelection = { vehicle: "", driver: "" };
+    renderSharedSelection();
+    return;
+  }
+
+  const sharedState = sharedSettings.ensureState();
+  state.sharedSelection = {
+    vehicle: sharedState.current.vehicleNumber || "",
+    driver: sharedState.current.driverName || ""
+  };
+  renderSharedSelection();
+}
+
+function renderSharedSelection() {
+  const vehicle = state.sharedSelection.vehicle;
+  const driver = state.sharedSelection.driver;
+
+  elements.vehicleDisplay.textContent = vehicle || "未選択";
+  elements.vehicleDisplay.classList.toggle("is-placeholder", !vehicle);
+  elements.driverDisplay.textContent = driver || "未選択";
+  elements.driverDisplay.classList.toggle("is-placeholder", !driver);
 }
 
 function getRecordForMonth(month) {

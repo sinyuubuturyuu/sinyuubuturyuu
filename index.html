@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>シンユウ物流アプリランチャー</title>
   <meta name="theme-color" content="#ffffff">
-  <meta name="description" content="点検アプリを設定して起動するランチャー">
+  <meta name="description" content="よく使うアプリをすばやく起動するランチャー">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <meta name="apple-mobile-web-app-title" content="シンユウ物流">
@@ -27,41 +27,95 @@
     </section>
   </main>
 
-  <dialog id="settingsDialog" class="settings-dialog" aria-label="起動設定">
+  <dialog id="settingsDialog" class="settings-dialog" aria-label="設定">
     <form id="settingsForm" class="settings-panel" method="dialog">
       <div class="settings-header">
         <h2>設定</h2>
-        <button id="closeSettingsButton" class="text-button" type="button" aria-label="閉じる">閉じる</button>
+        <button id="closeSettingsButton" class="text-button" type="button" aria-label="戻る">戻る</button>
       </div>
 
       <div class="settings-fields">
-        <label class="field">
-          <span>アプリ1の名前</span>
-          <input id="app1Name" name="app1Name" type="text" autocomplete="off">
-        </label>
-        <label class="field">
-          <span>アプリ1の起動先</span>
-          <input id="app1Path" name="app1Path" type="text" autocomplete="off">
-        </label>
-        <label class="field">
-          <span>アプリ2の名前</span>
-          <input id="app2Name" name="app2Name" type="text" autocomplete="off">
-        </label>
-        <label class="field">
-          <span>アプリ2の起動先</span>
-          <input id="app2Path" name="app2Path" type="text" autocomplete="off">
-        </label>
+        <section class="settings-section">
+          <label class="field">
+            <span>表示モード</span>
+            <select id="themeMode" class="field-select">
+              <option value="light">ライトモード</option>
+              <option value="dark">ダークモード</option>
+            </select>
+          </label>
+        </section>
+
+        <section class="settings-section">
+          <div class="section-head">
+            <h3>車両番号</h3>
+            <p>タイヤ点検表と日常点検表で共通です。</p>
+          </div>
+          <label class="field">
+            <span>車両番号を登録</span>
+            <div class="field-row">
+              <input id="newVehicleNumber" type="text" autocomplete="off" placeholder="例: 品川 100 あ 1234">
+              <button id="addVehicleBtn" class="mini-button primary" type="button">登録</button>
+              <button id="saveVehicleBackupBtn" class="mini-button" type="button">保存</button>
+              <button id="restoreVehicleBackupBtn" class="mini-button" type="button">復元</button>
+              <button id="deleteVehicleBackupBtn" class="mini-button" type="button">削除</button>
+            </div>
+            <div id="vehicleBackupStatus" class="backup-status">バックアップ: 読み込み待ち</div>
+          </label>
+          <div class="field">
+            <span>登録済み車両番号</span>
+            <div id="vehicleList" class="value-list"></div>
+          </div>
+        </section>
+
+        <section class="settings-section">
+          <div class="section-head">
+            <h3>乗務員</h3>
+            <p>日常点検表では運転者（点検者）として使います。</p>
+          </div>
+          <label class="field">
+            <span>乗務員を登録</span>
+            <div class="field-row">
+              <input id="newDriverName" type="text" autocomplete="off" placeholder="漢字 例: 山田 太郎">
+              <input id="newDriverReading" type="text" autocomplete="off" placeholder="ひらがな 例: やまだ たろう">
+              <button id="addDriverBtn" class="mini-button primary" type="button">登録</button>
+              <button id="saveDriverBackupBtn" class="mini-button" type="button">保存</button>
+              <button id="restoreDriverBackupBtn" class="mini-button" type="button">復元</button>
+              <button id="deleteDriverBackupBtn" class="mini-button" type="button">削除</button>
+            </div>
+            <div id="driverBackupStatus" class="backup-status">バックアップ: 読み込み待ち</div>
+          </label>
+          <div class="field">
+            <span>登録済み乗務員</span>
+            <div id="driverList" class="value-list"></div>
+          </div>
+        </section>
+
+        <section class="settings-section">
+          <div class="section-head">
+            <h3>車種</h3>
+            <p>月次タイヤ点検表で使う車種です。</p>
+          </div>
+          <label class="field">
+            <span>車種を登録</span>
+            <div class="field-row">
+              <select id="newTruckType" class="field-select"></select>
+              <button id="addTruckTypeBtn" class="mini-button primary" type="button">登録</button>
+            </div>
+          </label>
+          <div class="field">
+            <span>登録済み車種</span>
+            <div id="truckTypeList" class="value-list"></div>
+          </div>
+        </section>
       </div>
 
       <p id="settingsStatus" class="settings-status" aria-live="polite"></p>
-
-      <div class="settings-actions">
-        <button id="resetSettingsButton" class="launcher-button secondary" type="button">初期値に戻す</button>
-        <button class="launcher-button primary" type="submit">保存</button>
-      </div>
     </form>
   </dialog>
 
+  <script src="./shared-settings.js"></script>
+  <script src="./getjityretenkenhyou/firebase/firebase-config.js?v=20260226-1"></script>
+  <script src="./getjityretenkenhyou/firebase/firebase-cloud-sync.js?v=20260226-1"></script>
   <script src="./launcher.js"></script>
 </body>
 </html>
