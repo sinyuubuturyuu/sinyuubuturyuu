@@ -54,7 +54,7 @@
       -webkit-tap-highlight-color: transparent;
     }
     body {
-      padding-bottom: var(--bottom-dock-space);
+      padding-bottom: 0;
     }
     body.tiny-overflow-lock {
       overflow-y: hidden;
@@ -222,11 +222,11 @@
     }
     #basicNextBtn,
     .launcher-back-link,
-    #quickResetBtn,
     #openSettingsBtn {
       font-size: calc(1.9rem * var(--mobile-fit-scale));
     }
     #truckToExportBtn,
+    #quickResetBtn,
     #truckBackBtn {
       font-size: calc(2.04rem * var(--mobile-fit-scale));
     }
@@ -385,39 +385,6 @@
       width: 100%;
       min-height: 68px;
       font-size: 1.05rem;
-    }
-    .fixed-settings {
-      position: fixed;
-      left: 0;
-      right: 0;
-      bottom: 0;
-      z-index: 40;
-      display: flex;
-      justify-content: center;
-      padding: 10px 0 calc(12px + env(safe-area-inset-bottom));
-      background: linear-gradient(180deg, transparent 0%, color-mix(in srgb, var(--dock-bg) 88%, black) 36%);
-      pointer-events: none;
-    }
-    .fixed-settings-row {
-      width: min(520px, 92vw);
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 8px;
-      padding: 8px;
-      border: 1px solid var(--line);
-      border-radius: 14px;
-      background: color-mix(in srgb, var(--dock-surface) 90%, black);
-      border-color: var(--dock-line);
-      box-shadow: var(--shadow);
-      pointer-events: auto;
-    }
-    .fixed-settings .btn {
-      width: 100%;
-      pointer-events: auto;
-      box-shadow: none;
-    }
-    body.screen-settings .fixed-settings {
-      display: none;
     }
     .settings-body {
       display: grid;
