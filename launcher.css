@@ -82,6 +82,10 @@ body {
   gap: 14px;
 }
 
+.button-group {
+  margin-top: 36px;
+}
+
 .launcher-button {
   width: 100%;
   min-height: 58px;
