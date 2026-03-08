@@ -4,18 +4,15 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>月次日常点検表アプリ</title>
-  <meta name="theme-color" content="#cb5b2d" />
+  <meta name="theme-color" content="#f3f5f8" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   <meta name="apple-mobile-web-app-title" content="月次点検" />
-  <link rel="manifest" href="./manifest.webmanifest?v=20260307-3" />
+  <link rel="manifest" href="./manifest.webmanifest?v=20260308-2" />
   <link rel="apple-touch-icon" href="./icons/apple-touch-icon.png" />
-  <link rel="stylesheet" href="./styles.css?v=20260307-3" />
+  <link rel="stylesheet" href="./styles.css?v=20260308-2" />
 </head>
 <body>
-  <div class="ambient ambient-left" aria-hidden="true"></div>
-  <div class="ambient ambient-right" aria-hidden="true"></div>
-
   <main class="app-shell">
     <section id="entryScreen" class="screen screen-entry">
       <div class="brand-block reveal">
@@ -42,7 +39,7 @@
 
           <div class="entry-actions">
             <button id="startButton" class="button button-primary" type="submit">点検開始</button>
-            <a class="button button-ghost launcher-back-link" href="../index.html">ランチャーへ戻る</a>
+            <a class="button button-ghost launcher-back-link" href="../index.html">戻る</a>
           </div>
           <p id="entryStatus" class="status" aria-live="polite"></p>
         </form>
@@ -93,11 +90,12 @@
         <p id="emptyStateText">次の入力日が来るまで、この画面には未入力日が出ません。</p>
       </section>
     </section>
+
   </main>
 
   <script src="../shared-settings.js"></script>
-  <script src="./firebase-config.js?v=20260307-3"></script>
-  <script src="./app.js?v=20260307-3"></script>
+  <script src="./firebase-config.js?v=20260308-2"></script>
+  <script src="./app.js?v=20260308-2"></script>
 </body>
 </html>
 

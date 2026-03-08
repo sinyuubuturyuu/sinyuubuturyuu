@@ -20,6 +20,7 @@ const elements = {
   settingsDialog: document.getElementById("settingsDialog"),
   settingsForm: document.getElementById("settingsForm"),
   closeSettingsButton: document.getElementById("closeSettingsButton"),
+  confirmSettingsButton: document.getElementById("confirmSettingsButton"),
   themeMode: document.getElementById("themeMode"),
   newVehicleNumber: document.getElementById("newVehicleNumber"),
   addVehicleBtn: document.getElementById("addVehicleBtn"),
@@ -244,6 +245,7 @@ function bindEvents() {
   });
 
   elements.closeSettingsButton.addEventListener("click", closeSettingsDialog);
+  elements.confirmSettingsButton.addEventListener("click", closeSettingsDialog);
   elements.settingsForm.addEventListener("submit", (event) => event.preventDefault());
 
   elements.settingsDialog.addEventListener("click", (event) => {

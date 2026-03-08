@@ -304,6 +304,16 @@ body {
   font-size: 0.92rem;
 }
 
+.settings-footer {
+  display: flex;
+  justify-content: center;
+  margin-top: 18px;
+}
+
+.settings-footer .mini-button {
+  min-width: 120px;
+}
+
 .backup-status {
   min-height: 1.4em;
 }

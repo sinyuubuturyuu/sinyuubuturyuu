@@ -8,9 +8,13 @@ const CHECK_SEQUENCE = ["", "レ", "×", "▲"];
 const HOLIDAY_CHECK = "休";
 const WEEKDAYS = ["日", "月", "火", "水", "木", "金", "土"];
 const STORAGE_NAMESPACE = "monthly_inspection_app_v1";
+const THEME_COLORS = Object.freeze({
+  light: "#f3f5f8",
+  dark: "#0f1722"
+});
 const FIREBASE_REQUIRED_KEYS = ["apiKey", "authDomain", "projectId", "appId"];
 const INSPECTION_GUIDE_MESSAGE = "空欄 → レ → × → ▲　未入力日のみ表示しています。休みの日は日付を押してOKをタップしてください。上の送信ボタンで保存します。";
-const APP_VERSION = "20260307-3";
+const APP_VERSION = "20260308-2";
 const sharedSettings = window.SharedLauncherSettings || null;
 
 const INSPECTION_GROUPS = [
@@ -104,7 +108,8 @@ const elements = {
   emptyState: document.getElementById("emptyState"),
   emptyStateText: document.getElementById("emptyStateText"),
   tableHead: document.getElementById("inspectionTableHead"),
-  tableBody: document.getElementById("inspectionTableBody")
+  tableBody: document.getElementById("inspectionTableBody"),
+  themeColorMeta: document.querySelector('meta[name="theme-color"]')
 };
 
 const state = {
@@ -122,6 +127,7 @@ const state = {
 
 elements.startButton.disabled = true;
 
+initTheme();
 elements.entryForm.addEventListener("submit", handleStart);
 elements.backButton.addEventListener("click", handleBack);
 elements.sendButton.addEventListener("click", handleSend);
@@ -178,7 +184,11 @@ function handleBack() {
 }
 
 function handleVisibilityChange() {
-  if (document.visibilityState !== "visible" || state.session) {
+  if (document.visibilityState !== "visible") {
+    return;
+  }
+  syncThemeFromLauncher();
+  if (state.session) {
     return;
   }
   refreshSharedSelection();
@@ -778,6 +788,28 @@ function setStatus(element, message, isError = false, isSuccess = false) {
 function toggleBusy(button, busy, idleLabel) {
   button.disabled = busy;
   button.textContent = busy ? (button.id === "sendButton" ? "送信中..." : "読込中...") : idleLabel;
+}
+
+function applyTheme(theme) {
+  const next = theme === "dark" ? "dark" : "light";
+  document.documentElement.setAttribute("data-theme", next);
+  if (elements.themeColorMeta) {
+    elements.themeColorMeta.setAttribute("content", THEME_COLORS[next]);
+  }
+}
+
+function initTheme() {
+  syncThemeFromLauncher();
+}
+
+function syncThemeFromLauncher() {
+  if (!sharedSettings || typeof sharedSettings.ensureState !== "function") {
+    applyTheme("light");
+    return;
+  }
+
+  const sharedState = sharedSettings.ensureState();
+  applyTheme(sharedState.theme);
 }
 
 async function clearLegacyCaches() {
