@@ -16,6 +16,7 @@ const THEME_COLORS = Object.freeze({
 const FIREBASE_REQUIRED_KEYS = ["apiKey", "authDomain", "projectId", "appId"];
 const INSPECTION_GUIDE_MESSAGE = "空欄 → レ → × → ▲　未入力日のみ表示しています。休みの日は日付を押すとその日に休を一括入力できます。もう一度押すと解除できます。上の送信ボタンで保存します。";
 const APP_VERSION = "20260308-7";
+const EXIT_APP_ID = "monthly-daily";
 const sharedSettings = window.SharedLauncherSettings || null;
 
 const INSPECTION_GROUPS = [
@@ -269,9 +270,10 @@ function setupExitHandling() {
   }
 
   exitBridge.ensureListening();
-  exitBridge.subscribe(() => {
+  exitBridge.subscribe((signal) => {
+    exitBridge.acknowledgeExit?.(signal, EXIT_APP_ID);
     void shutdownApp();
-  });
+  }, { appId: EXIT_APP_ID });
 }
 
 async function shutdownApp() {

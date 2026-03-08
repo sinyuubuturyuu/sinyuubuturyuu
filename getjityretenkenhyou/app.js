@@ -16,6 +16,7 @@
       const SETTINGS_BACKUP_SLOT = 1;
       const LAST_COMMIT_PUSHED_AT = "2026-03-01 21:33";
       const GITHUB_REPO_API_LATEST_COMMIT = "https://api.github.com/repos/sinyuubuturyuu/getujityretenkenhyou/commits?sha=main&per_page=1";
+      const EXIT_APP_ID = "monthly-tire";
       const exitState = {
         closing: false
       };
@@ -1329,9 +1330,10 @@
         const exitBridge = window.AppExitBridge;
         if (!exitBridge) return;
         exitBridge.ensureListening();
-        exitBridge.subscribe(() => {
+        exitBridge.subscribe((signal) => {
+          exitBridge.acknowledgeExit && exitBridge.acknowledgeExit(signal, EXIT_APP_ID);
           void shutdownApp();
-        });
+        }, { appId: EXIT_APP_ID });
       }
 
       async function showSendFarewell() {

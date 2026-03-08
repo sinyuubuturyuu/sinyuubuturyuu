@@ -4,6 +4,7 @@ const APP_CONFIG = {
   app2Name: "月次日常点検表",
   app2Path: "./getujinitijyoutenkenhyou/index.html",
 };
+const EXIT_APP_ID = "launcher";
 
 const SETTINGS_BACKUP_KIND = Object.freeze({
   VEHICLES: "vehicles",
@@ -699,9 +700,10 @@ function setupExitHandling() {
   }
 
   exitBridge.ensureListening();
-  exitBridge.subscribe(() => {
+  exitBridge.subscribe((signal) => {
+    exitBridge.acknowledgeExit?.(signal, EXIT_APP_ID);
     void performExitSequence({ broadcast: false });
-  });
+  }, { appId: EXIT_APP_ID });
 }
 
 async function performExitSequence({ broadcast }) {
@@ -712,7 +714,10 @@ async function performExitSequence({ broadcast }) {
   exitState.closing = true;
 
   if (broadcast) {
-    window.AppExitBridge?.requestExit("launcher");
+    window.AppExitBridge?.requestExit("launcher", {
+      sourceAppId: EXIT_APP_ID,
+      targetAppIds: ["launcher", "monthly-tire", "monthly-daily"],
+    });
   }
 
   await showSendFarewell();

@@ -1,11 +1,15 @@
 (function () {
   const EXIT_SIGNAL_KEY = "sinyuubuturyuu.exit.signal.v1";
+  const EXIT_ACK_KEY = "sinyuubuturyuu.exit.ack.v1";
   const EXIT_CHANNEL_NAME = "sinyuubuturyuu.exit.channel.v1";
   const EXIT_SIGNAL_TTL_MS = 12000;
   const EXIT_MESSAGE_TYPE = "sinyuubuturyuu-exit-request";
+  const EXIT_ACK_TYPE = "sinyuubuturyuu-exit-ack";
   const handledTokens = new Set();
+  const handledAckTokens = new Set();
   const listeners = new Set();
   const runtimeStartedAt = now();
+  const instanceId = createInstanceId();
   let channel = null;
   let listening = false;
 
@@ -25,6 +29,10 @@
     }
   }
 
+  function createInstanceId() {
+    return `${now()}-${Math.random().toString(16).slice(2)}-${Math.random().toString(16).slice(2)}`;
+  }
+
   function isFreshSignal(signal) {
     if (!signal || signal.type !== EXIT_MESSAGE_TYPE || !signal.token) {
       return false;
@@ -37,6 +45,18 @@
     return now() - signal.at <= EXIT_SIGNAL_TTL_MS;
   }
 
+  function isFreshAck(ack) {
+    if (!ack || ack.type !== EXIT_ACK_TYPE || !ack.signalToken || !ack.instanceId) {
+      return false;
+    }
+
+    if (typeof ack.at !== "number") {
+      return false;
+    }
+
+    return now() - ack.at <= EXIT_SIGNAL_TTL_MS;
+  }
+
   function rememberToken(token) {
     handledTokens.add(token);
     if (handledTokens.size > 32) {
@@ -46,10 +66,34 @@
     }
   }
 
+  function normalizeTargetAppIds(targetAppIds) {
+    if (!Array.isArray(targetAppIds) || !targetAppIds.length) {
+      return [];
+    }
+
+    return [...new Set(targetAppIds.filter((value) => typeof value === "string" && value))];
+  }
+
+  function matchesTarget(signal, appId) {
+    if (!appId) {
+      return true;
+    }
+
+    if (!Array.isArray(signal.targetAppIds) || !signal.targetAppIds.length) {
+      return true;
+    }
+
+    return signal.targetAppIds.includes(appId);
+  }
+
   function notify(signal) {
-    listeners.forEach((listener) => {
+    listeners.forEach((entry) => {
       try {
-        listener(signal);
+        if (!matchesTarget(signal, entry.appId)) {
+          return;
+        }
+
+        entry.listener(signal);
       } catch (error) {
         console.warn("Exit listener failed.", error);
       }
@@ -57,13 +101,36 @@
   }
 
   function handleSignal(signal) {
-    if (!isFreshSignal(signal) || handledTokens.has(signal.token)) {
+    if (!isFreshSignal(signal) || handledTokens.has(signal.token) || signal.senderInstanceId === instanceId) {
       return false;
     }
 
     rememberToken(signal.token);
     notify(signal);
     return true;
+  }
+
+  function handleAck(ack) {
+    if (!isFreshAck(ack)) {
+      return false;
+    }
+
+    const ackToken = `${ack.signalToken}:${ack.instanceId}`;
+    if (handledAckTokens.has(ackToken)) {
+      return false;
+    }
+
+    rememberAckToken(ackToken);
+    return true;
+  }
+
+  function rememberAckToken(token) {
+    handledAckTokens.add(token);
+    if (handledAckTokens.size > 64) {
+      const tokens = [...handledAckTokens].slice(-24);
+      handledAckTokens.clear();
+      tokens.forEach((value) => handledAckTokens.add(value));
+    }
   }
 
   function readPendingSignal() {
@@ -74,10 +141,13 @@
     }
   }
 
-  function createSignal(source) {
+  function createSignal(source, options = {}) {
     return {
       type: EXIT_MESSAGE_TYPE,
       source: source || window.location.pathname || "unknown",
+      sourceAppId: options.sourceAppId || "",
+      senderInstanceId: instanceId,
+      targetAppIds: normalizeTargetAppIds(options.targetAppIds),
       token: `${now()}-${Math.random().toString(16).slice(2)}`,
       at: now(),
     };
@@ -100,29 +170,56 @@
     }
   }
 
-  function requestExit(source) {
-    const signal = createSignal(source);
-    rememberToken(signal.token);
-
-    try {
-      window.localStorage.setItem(EXIT_SIGNAL_KEY, JSON.stringify(signal));
-    } catch {
-      // noop
-    }
-
+  function writeBroadcastMessage(message) {
     try {
       if (channel) {
-        channel.postMessage(signal);
+        channel.postMessage(message);
       }
     } catch {
       // noop
     }
+  }
+
+  function writeStorageMessage(key, payload) {
+    try {
+      window.localStorage.setItem(key, JSON.stringify(payload));
+    } catch {
+      // noop
+    }
+  }
+
+  function requestExit(source, options = {}) {
+    const signal = createSignal(source, options);
+    rememberToken(signal.token);
+
+    writeStorageMessage(EXIT_SIGNAL_KEY, signal);
+    writeBroadcastMessage(signal);
 
     window.setTimeout(() => {
       clearPendingSignal(signal.token);
     }, EXIT_SIGNAL_TTL_MS);
 
     return signal;
+  }
+
+  function acknowledgeExit(signal, appId) {
+    if (!signal || !signal.token) {
+      return null;
+    }
+
+    const ack = {
+      type: EXIT_ACK_TYPE,
+      signalToken: signal.token,
+      sourceAppId: signal.sourceAppId || "",
+      recipientAppId: appId || "",
+      instanceId,
+      at: now(),
+    };
+
+    rememberAckToken(`${ack.signalToken}:${ack.instanceId}`);
+    writeStorageMessage(EXIT_ACK_KEY, ack);
+    writeBroadcastMessage(ack);
+    return ack;
   }
 
   function ensureListening() {
@@ -133,17 +230,33 @@
     listening = true;
 
     window.addEventListener("storage", (event) => {
-      if (event.key !== EXIT_SIGNAL_KEY || !event.newValue) {
+      if (!event.newValue) {
         return;
       }
-      handleSignal(safeJsonParse(event.newValue));
+
+      if (event.key === EXIT_SIGNAL_KEY) {
+        handleSignal(safeJsonParse(event.newValue));
+        return;
+      }
+
+      if (event.key === EXIT_ACK_KEY) {
+        handleAck(safeJsonParse(event.newValue));
+      }
     });
 
     if ("BroadcastChannel" in window) {
       try {
         channel = new BroadcastChannel(EXIT_CHANNEL_NAME);
         channel.addEventListener("message", (event) => {
-          handleSignal(event.data);
+          const payload = event.data;
+          if (payload?.type === EXIT_MESSAGE_TYPE) {
+            handleSignal(payload);
+            return;
+          }
+
+          if (payload?.type === EXIT_ACK_TYPE) {
+            handleAck(payload);
+          }
         });
       } catch {
         channel = null;
@@ -160,14 +273,19 @@
     }
   }
 
-  function subscribe(listener) {
+  function subscribe(listener, options = {}) {
     if (typeof listener !== "function") {
       return () => {};
     }
 
-    listeners.add(listener);
+    const entry = {
+      appId: typeof options.appId === "string" ? options.appId : "",
+      listener,
+    };
+
+    listeners.add(entry);
     return () => {
-      listeners.delete(listener);
+      listeners.delete(entry);
     };
   }
 
@@ -244,8 +362,10 @@
   }
 
   window.AppExitBridge = Object.freeze({
+    acknowledgeExit,
     closeCurrentWindow,
     ensureListening,
+    getInstanceId: () => instanceId,
     isFreshSignal,
     readPendingSignal,
     requestExit,
