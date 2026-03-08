@@ -16,6 +16,7 @@ const sharedSettings = window.SharedLauncherSettings;
 const elements = {
   app1Button: document.getElementById("app1Button"),
   app2Button: document.getElementById("app2Button"),
+  exitButton: document.getElementById("exitButton"),
   settingsButton: document.getElementById("settingsButton"),
   settingsDialog: document.getElementById("settingsDialog"),
   settingsForm: document.getElementById("settingsForm"),
@@ -41,6 +42,8 @@ const elements = {
   addTruckTypeBtn: document.getElementById("addTruckTypeBtn"),
   truckTypeList: document.getElementById("truckTypeList"),
   settingsStatus: document.getElementById("settingsStatus"),
+  sendFarewell: document.getElementById("sendFarewell"),
+  sendFarewellImage: document.getElementById("sendFarewellImage"),
 };
 
 const state = {
@@ -236,6 +239,9 @@ function renderBackupControls() {
 function bindEvents() {
   elements.app1Button.addEventListener("click", () => openApp(APP_CONFIG.app1Path));
   elements.app2Button.addEventListener("click", () => openApp(APP_CONFIG.app2Path));
+  elements.exitButton.addEventListener("click", () => {
+    void exitLauncher();
+  });
 
   elements.settingsButton.addEventListener("click", () => {
     clearStatus();
@@ -646,6 +652,53 @@ function openApp(path) {
     return;
   }
   window.location.href = path;
+}
+
+async function exitLauncher() {
+  await showSendFarewell();
+  await closeLauncher();
+}
+
+async function showSendFarewell() {
+  if (!elements.sendFarewell) {
+    return;
+  }
+
+  elements.sendFarewell.classList.add("show");
+  elements.sendFarewell.setAttribute("aria-hidden", "false");
+
+  const image = elements.sendFarewellImage;
+  if (image && !image.complete) {
+    await new Promise((resolve) => {
+      let done = false;
+      const finish = () => {
+        if (done) {
+          return;
+        }
+        done = true;
+        image.removeEventListener("load", finish);
+        image.removeEventListener("error", finish);
+        resolve();
+      };
+      image.addEventListener("load", finish, { once: true });
+      image.addEventListener("error", finish, { once: true });
+      window.setTimeout(finish, 1200);
+    });
+  }
+
+  await new Promise((resolve) => setTimeout(resolve, 1800));
+}
+
+async function closeLauncher() {
+  try {
+    window.close();
+  } catch {
+    // noop
+  }
+  await new Promise((resolve) => setTimeout(resolve, 120));
+  if (!document.hidden) {
+    window.location.replace("about:blank");
+  }
 }
 
 function registerServiceWorker() {

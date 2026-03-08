@@ -15,7 +15,7 @@ const THEME_COLORS = Object.freeze({
 });
 const FIREBASE_REQUIRED_KEYS = ["apiKey", "authDomain", "projectId", "appId"];
 const INSPECTION_GUIDE_MESSAGE = "空欄 → レ → × → ▲　未入力日のみ表示しています。休みの日は日付を押してOKをタップしてください。上の送信ボタンで保存します。";
-const APP_VERSION = "20260308-5";
+const APP_VERSION = "20260308-6";
 const sharedSettings = window.SharedLauncherSettings || null;
 
 const INSPECTION_GROUPS = [
@@ -103,6 +103,8 @@ const elements = {
   sendConfirmMessage: document.getElementById("sendConfirmMessage"),
   sendConfirmCancelButton: document.getElementById("sendConfirmCancelButton"),
   sendConfirmOkButton: document.getElementById("sendConfirmOkButton"),
+  sendFarewell: document.getElementById("sendFarewell"),
+  sendFarewellImage: document.getElementById("sendFarewellImage"),
   targetMonthButtons: document.getElementById("targetMonthButtons"),
   entryStatus: document.getElementById("entryStatus"),
   inspectionStatus: document.getElementById("inspectionStatus"),
@@ -247,6 +249,7 @@ async function submitSend() {
       delete state.draftsByMonth[month];
     }
 
+    await showSendFarewell();
     returnToLauncherHome();
   } catch (error) {
     setInspectionStatus(`送信に失敗しました: ${error.message}`, true);
@@ -604,6 +607,36 @@ function closeSendConfirmDialog() {
   } else {
     elements.sendConfirmDialog.removeAttribute("open");
   }
+}
+
+async function showSendFarewell() {
+  if (!elements.sendFarewell) {
+    return;
+  }
+
+  elements.sendFarewell.classList.add("show");
+  elements.sendFarewell.setAttribute("aria-hidden", "false");
+
+  const image = elements.sendFarewellImage;
+  if (image && !image.complete) {
+    await new Promise((resolve) => {
+      let done = false;
+      const finish = () => {
+        if (done) {
+          return;
+        }
+        done = true;
+        image.removeEventListener("load", finish);
+        image.removeEventListener("error", finish);
+        resolve();
+      };
+      image.addEventListener("load", finish, { once: true });
+      image.addEventListener("error", finish, { once: true });
+      window.setTimeout(finish, 1200);
+    });
+  }
+
+  await new Promise((resolve) => setTimeout(resolve, 1800));
 }
 
 function returnToLauncherHome() {
