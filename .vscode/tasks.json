@@ -4,25 +4,25 @@
         {
             "label": "start-local-server",
             "type": "shell",
-            "command": "python -m http.server 8080",
-            "isBackground": true,
+            "command": "$existing = Get-NetTCPConnection -LocalPort 8080 -State Listen -ErrorAction SilentlyContinue; if (-not $existing) { Start-Process -FilePath python -ArgumentList '-m','http.server','8080' -WorkingDirectory '${workspaceFolder}'; Start-Sleep -Seconds 1 }; Write-Host 'Local server ready on http://localhost:8080'",
             "options": {
-                "cwd": "${workspaceFolder}"
-            },
-            "problemMatcher": {
-                "owner": "custom",
-                "pattern": {
-                    "regexp": "."
-                },
-                "background": {
-                    "activeOnStart": true,
-                    "beginsPattern": ".",
-                    "endsPattern": "Serving HTTP on"
+                "cwd": "${workspaceFolder}",
+                "shell": {
+                    "executable": "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
+                    "args": [
+                        "-NoProfile",
+                        "-ExecutionPolicy",
+                        "Bypass",
+                        "-Command"
+                    ]
                 }
             },
             "presentation": {
-                "reveal": "always",
-                "panel": "dedicated"
+                "reveal": "never",
+                "focus": false,
+                "panel": "shared",
+                "showReuseMessage": false,
+                "clear": false
             }
         }
     ]
