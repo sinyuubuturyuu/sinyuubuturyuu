@@ -15,7 +15,7 @@ const THEME_COLORS = Object.freeze({
 });
 const FIREBASE_REQUIRED_KEYS = ["apiKey", "authDomain", "projectId", "appId"];
 const INSPECTION_GUIDE_MESSAGE = "空欄 → レ → × → ▲　未入力日のみ表示しています。休みの日は日付を押してOKをタップしてください。上の送信ボタンで保存します。";
-const APP_VERSION = "20260308-3";
+const APP_VERSION = "20260308-5";
 const sharedSettings = window.SharedLauncherSettings || null;
 
 const INSPECTION_GROUPS = [
@@ -99,6 +99,10 @@ const elements = {
   startButton: document.getElementById("startButton"),
   backButton: document.getElementById("backButton"),
   sendButton: document.getElementById("sendButton"),
+  sendConfirmDialog: document.getElementById("sendConfirmDialog"),
+  sendConfirmMessage: document.getElementById("sendConfirmMessage"),
+  sendConfirmCancelButton: document.getElementById("sendConfirmCancelButton"),
+  sendConfirmOkButton: document.getElementById("sendConfirmOkButton"),
   targetMonthButtons: document.getElementById("targetMonthButtons"),
   entryStatus: document.getElementById("entryStatus"),
   inspectionStatus: document.getElementById("inspectionStatus"),
@@ -133,6 +137,11 @@ initTheme();
 elements.entryForm.addEventListener("submit", handleStart);
 elements.backButton.addEventListener("click", handleBack);
 elements.sendButton.addEventListener("click", handleSend);
+elements.sendConfirmCancelButton?.addEventListener("click", closeSendConfirmDialog);
+elements.sendConfirmOkButton?.addEventListener("click", () => {
+  closeSendConfirmDialog();
+  void submitSend();
+});
 elements.targetMonthButtons.addEventListener("click", handleTargetMonthSelect);
 elements.tableHead.addEventListener("click", handleDayHeadTap);
 elements.tableBody.addEventListener("click", handleCheckTap);
@@ -197,36 +206,34 @@ function handleVisibilityChange() {
 }
 
 async function handleSend() {
-  if (!state.session || !state.pendingDays.length) {
-    setInspectionStatus("送信対象の日付がありません。", false, false);
+  const sendPlan = getSendPlan();
+  if (!sendPlan) {
     return;
   }
 
-  const month = state.targetMonth;
-  const record = getRecordForMonth(month);
-  const monthDraft = state.draftsByMonth[month] || {};
-  const completeDays = state.pendingDays.filter((day) => isDayComplete(monthDraft[String(day)]));
-
-  if (!completeDays.length) {
-    setInspectionStatus("1日分すべて入力できた日付がありません。未完了の日はそのまま残ります。", true);
+  if (!elements.sendConfirmDialog || !elements.sendConfirmMessage) {
+    if (window.confirm(buildSendConfirmMessage(sendPlan))) {
+      await submitSend();
+    }
     return;
   }
 
+  elements.sendConfirmMessage.textContent = buildSendConfirmMessage(sendPlan);
+  if (typeof elements.sendConfirmDialog.showModal === "function") {
+    elements.sendConfirmDialog.showModal();
+  } else {
+    elements.sendConfirmDialog.setAttribute("open", "");
+  }
+}
+
+async function submitSend() {
+  const sendPlan = getSendPlan();
+  if (!sendPlan) {
+    return;
+  }
+
+  const { month, monthDraft, completeDays, payload } = sendPlan;
   toggleBusy(elements.sendButton, true, "送信中...");
-
-  const nextChecksByDay = omitCheckDays(record.checksByDay, completeDays);
-
-  for (const day of completeDays) {
-    nextChecksByDay[String(day)] = normalizeDayChecks(monthDraft[String(day)] || createEmptyDayChecks());
-  }
-
-  const payload = normalizeRecord({
-    month,
-    vehicle: state.session.vehicle,
-    driver: state.session.driver,
-    checksByDay: nextChecksByDay,
-    holidayDays: record.holidayDays
-  });
 
   try {
     await state.store.saveRecord(payload);
@@ -240,15 +247,53 @@ async function handleSend() {
       delete state.draftsByMonth[month];
     }
 
-    const sentDays = [...completeDays];
-    syncTargetMonth(month);
-    renderInspectionScreen();
-    setInspectionStatus(`${formatMonth(month)} の ${sentDays.join("・")} 日分を送信しました。`, false, true);
+    returnToLauncherHome();
   } catch (error) {
     setInspectionStatus(`送信に失敗しました: ${error.message}`, true);
   } finally {
     toggleBusy(elements.sendButton, false, "送信");
   }
+}
+
+function getSendPlan() {
+  if (!state.session || !state.pendingDays.length) {
+    setInspectionStatus("送信対象の日付がありません。", false, false);
+    return null;
+  }
+
+  const month = state.targetMonth;
+  const record = getRecordForMonth(month);
+  const monthDraft = state.draftsByMonth[month] || {};
+  const completeDays = state.pendingDays.filter((day) => isDayComplete(monthDraft[String(day)]));
+
+  if (!completeDays.length) {
+    setInspectionStatus("1日分すべて入力できた日付がありません。未完了の日はそのまま残ります。", true);
+    return null;
+  }
+
+  const nextChecksByDay = omitCheckDays(record.checksByDay, completeDays);
+  for (const day of completeDays) {
+    nextChecksByDay[String(day)] = normalizeDayChecks(monthDraft[String(day)] || createEmptyDayChecks());
+  }
+
+  const payload = normalizeRecord({
+    month,
+    vehicle: state.session.vehicle,
+    driver: state.session.driver,
+    checksByDay: nextChecksByDay,
+    holidayDays: record.holidayDays
+  });
+
+  return {
+    month,
+    monthDraft,
+    completeDays,
+    payload
+  };
+}
+
+function buildSendConfirmMessage(sendPlan) {
+  return "入力内容に間違いがなければ、OKを押してください。";
 }
 
 function handleCheckTap(event) {
@@ -550,6 +595,22 @@ function switchScreen(mode) {
   elements.inspectionScreen.hidden = !showingInspection;
 }
 
+function closeSendConfirmDialog() {
+  if (!elements.sendConfirmDialog) {
+    return;
+  }
+  if (elements.sendConfirmDialog.open && typeof elements.sendConfirmDialog.close === "function") {
+    elements.sendConfirmDialog.close();
+  } else {
+    elements.sendConfirmDialog.removeAttribute("open");
+  }
+}
+
+function returnToLauncherHome() {
+  closeSendConfirmDialog();
+  window.location.replace("../index.html");
+}
+
 function refreshSharedSelection() {
   if (!sharedSettings || typeof sharedSettings.ensureState !== "function") {
     state.sharedSelection = { vehicle: "", driver: "" };
@@ -774,8 +835,8 @@ function formatTargetMonthButton(yearMonth) {
   return `${formatMonth(yearMonth)}/${suffix}`;
 }
 
-function setEntryStatus(message, isError = false) {
-  setStatus(elements.entryStatus, message, isError);
+function setEntryStatus(message, isError = false, isSuccess = false) {
+  setStatus(elements.entryStatus, message, isError, isSuccess);
 }
 
 function clearEntryStatus() {

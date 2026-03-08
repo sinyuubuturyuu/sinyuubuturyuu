@@ -1318,14 +1318,8 @@
         a.remove();
         URL.revokeObjectURL(url);
       }
-      async function closeApp() {
-        try {
-          window.close();
-        } catch {
-          // noop
-        }
-        await new Promise((resolve) => setTimeout(resolve, 120));
-        if (!document.hidden) window.location.replace("about:blank");
+      function returnToLauncherHome() {
+        window.location.replace("../index.html");
       }
 
       async function showSendFarewell() {
@@ -1381,7 +1375,7 @@
         }
         resetCurrent({ confirm: false, toast: false });
         await showSendFarewell();
-        await closeApp();
+        returnToLauncherHome();
       }
 
       function resetCurrent(options = {}) {
