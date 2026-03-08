@@ -5,6 +5,7 @@
   const EXIT_MESSAGE_TYPE = "sinyuubuturyuu-exit-request";
   const handledTokens = new Set();
   const listeners = new Set();
+  const runtimeStartedAt = now();
   let channel = null;
   let listening = false;
 
@@ -82,6 +83,23 @@
     };
   }
 
+  function clearPendingSignal(expectedToken) {
+    try {
+      const currentSignal = safeJsonParse(window.localStorage.getItem(EXIT_SIGNAL_KEY));
+      if (!currentSignal) {
+        return;
+      }
+
+      if (expectedToken && currentSignal.token !== expectedToken) {
+        return;
+      }
+
+      window.localStorage.removeItem(EXIT_SIGNAL_KEY);
+    } catch {
+      // noop
+    }
+  }
+
   function requestExit(source) {
     const signal = createSignal(source);
     rememberToken(signal.token);
@@ -99,6 +117,10 @@
     } catch {
       // noop
     }
+
+    window.setTimeout(() => {
+      clearPendingSignal(signal.token);
+    }, EXIT_SIGNAL_TTL_MS);
 
     return signal;
   }
@@ -129,10 +151,12 @@
     }
 
     const pendingSignal = readPendingSignal();
-    if (isFreshSignal(pendingSignal)) {
+    if (isFreshSignal(pendingSignal) && pendingSignal.at >= runtimeStartedAt) {
       window.setTimeout(() => {
         handleSignal(pendingSignal);
       }, 0);
+    } else if (pendingSignal && !isFreshSignal(pendingSignal)) {
+      clearPendingSignal();
     }
   }
 
