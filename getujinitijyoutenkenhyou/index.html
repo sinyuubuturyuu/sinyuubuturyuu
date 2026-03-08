@@ -8,9 +8,9 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   <meta name="apple-mobile-web-app-title" content="月次点検" />
-  <link rel="manifest" href="./manifest.webmanifest?v=20260308-2" />
+  <link rel="manifest" href="./manifest.webmanifest?v=20260308-3" />
   <link rel="apple-touch-icon" href="./icons/apple-touch-icon.png" />
-  <link rel="stylesheet" href="./styles.css?v=20260308-2" />
+  <link rel="stylesheet" href="./styles.css?v=20260308-3" />
 </head>
 <body>
   <main class="app-shell">
@@ -62,7 +62,7 @@
         <button id="backButton" class="button button-ghost" type="button">戻る</button>
 
         <div class="session-summary">
-          <p id="targetMonthLabel" class="month-pill"></p>
+          <div id="targetMonthButtons" class="month-button-list" aria-label="入力対象月"></div>
           <h2 id="sessionTitle">車番 - / 運転者 -</h2>
           <p id="pendingSummary" class="pending-summary" hidden aria-hidden="true"></p>
           <p id="storageModeLabel" hidden aria-hidden="true"></p>
@@ -94,8 +94,8 @@
   </main>
 
   <script src="../shared-settings.js"></script>
-  <script src="./firebase-config.js?v=20260308-2"></script>
-  <script src="./app.js?v=20260308-2"></script>
+  <script src="./firebase-config.js?v=20260308-3"></script>
+  <script src="./app.js?v=20260308-3"></script>
 </body>
 </html>
 

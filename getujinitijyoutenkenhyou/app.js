@@ -8,13 +8,14 @@ const CHECK_SEQUENCE = ["", "レ", "×", "▲"];
 const HOLIDAY_CHECK = "休";
 const WEEKDAYS = ["日", "月", "火", "水", "木", "金", "土"];
 const STORAGE_NAMESPACE = "monthly_inspection_app_v1";
+const MIN_SELECTABLE_MONTH = "2026-01";
 const THEME_COLORS = Object.freeze({
   light: "#f3f5f8",
   dark: "#0f1722"
 });
 const FIREBASE_REQUIRED_KEYS = ["apiKey", "authDomain", "projectId", "appId"];
 const INSPECTION_GUIDE_MESSAGE = "空欄 → レ → × → ▲　未入力日のみ表示しています。休みの日は日付を押してOKをタップしてください。上の送信ボタンで保存します。";
-const APP_VERSION = "20260308-2";
+const APP_VERSION = "20260308-3";
 const sharedSettings = window.SharedLauncherSettings || null;
 
 const INSPECTION_GROUPS = [
@@ -98,9 +99,9 @@ const elements = {
   startButton: document.getElementById("startButton"),
   backButton: document.getElementById("backButton"),
   sendButton: document.getElementById("sendButton"),
+  targetMonthButtons: document.getElementById("targetMonthButtons"),
   entryStatus: document.getElementById("entryStatus"),
   inspectionStatus: document.getElementById("inspectionStatus"),
-  targetMonthLabel: document.getElementById("targetMonthLabel"),
   sessionTitle: document.getElementById("sessionTitle"),
   pendingSummary: document.getElementById("pendingSummary"),
   storageModeLabel: document.getElementById("storageModeLabel"),
@@ -120,6 +121,7 @@ const state = {
   },
   recordsByMonth: {},
   targetMonth: "",
+  availableMonths: [],
   pendingDays: [],
   draftsByMonth: {},
   store: null
@@ -131,6 +133,7 @@ initTheme();
 elements.entryForm.addEventListener("submit", handleStart);
 elements.backButton.addEventListener("click", handleBack);
 elements.sendButton.addEventListener("click", handleSend);
+elements.targetMonthButtons.addEventListener("click", handleTargetMonthSelect);
 elements.tableHead.addEventListener("click", handleDayHeadTap);
 elements.tableBody.addEventListener("click", handleCheckTap);
 document.addEventListener("visibilitychange", handleVisibilityChange);
@@ -164,8 +167,7 @@ async function handleStart(event) {
   try {
     state.session = { vehicle, driver };
     state.recordsByMonth = await loadRecordMap(vehicle, driver);
-    state.targetMonth = resolveTargetMonth();
-    syncDraftForTargetMonth();
+    syncTargetMonth(getCurrentYearMonth());
     renderInspectionScreen();
     switchScreen("inspection");
     setInspectionStatus(INSPECTION_GUIDE_MESSAGE, false, true);
@@ -239,8 +241,7 @@ async function handleSend() {
     }
 
     const sentDays = [...completeDays];
-    state.targetMonth = resolveTargetMonth();
-    syncDraftForTargetMonth();
+    syncTargetMonth(month);
     renderInspectionScreen();
     setInspectionStatus(`${formatMonth(month)} の ${sentDays.join("・")} 日分を送信しました。`, false, true);
   } catch (error) {
@@ -266,6 +267,18 @@ function handleCheckTap(event) {
   button.textContent = nextValue || " ";
   button.className = `check-button ${getCheckButtonClass(nextValue)}`;
   button.setAttribute("aria-label", `${day}日 ${ITEM_LABELS[itemId] || itemId} ${nextValue || "未入力"}`);
+}
+
+function handleTargetMonthSelect(event) {
+  const button = event.target.closest("[data-target-month]");
+  if (!button || !state.session) return;
+
+  const nextMonth = button.dataset.targetMonth;
+  if (!nextMonth || nextMonth === state.targetMonth) return;
+
+  syncTargetMonth(nextMonth);
+  clearInspectionStatus();
+  renderInspectionScreen();
 }
 
 async function handleDayHeadTap(event) {
@@ -309,8 +322,7 @@ async function handleDayHeadTap(event) {
       delete state.draftsByMonth[month];
     }
 
-    state.targetMonth = resolveTargetMonth();
-    syncDraftForTargetMonth();
+    syncTargetMonth(month);
     renderInspectionScreen();
     setInspectionStatus(`${formatMonth(month)} の ${day}日を休として記録しました。`, false, true);
   } catch (error) {
@@ -398,23 +410,12 @@ async function loadRecordMap(vehicle, driver) {
   }, {});
 }
 
-function resolveTargetMonth() {
-  const currentMonth = getCurrentYearMonth();
-  const candidateMonths = Object.keys(state.recordsByMonth)
-    .filter((month) => compareYearMonth(month, currentMonth) < 0)
-    .sort(compareYearMonth);
-
-  for (const month of candidateMonths) {
-    if (getPendingDays(month).length) {
-      return month;
-    }
-  }
-
-  return currentMonth;
-}
-
 function syncDraftForTargetMonth() {
   const month = state.targetMonth;
+  if (!month) {
+    state.pendingDays = [];
+    return;
+  }
   const pendingDays = getPendingDays(month);
   state.pendingDays = pendingDays;
 
@@ -431,7 +432,7 @@ function syncDraftForTargetMonth() {
 }
 
 function renderInspectionScreen() {
-  elements.targetMonthLabel.textContent = formatTargetMonthPill(state.targetMonth);
+  renderTargetMonthButtons();
   elements.sessionTitle.textContent = `車番 ${state.session.vehicle} / 運転者 ${state.session.driver}`;
 
   if (!state.pendingDays.length) {
@@ -452,6 +453,20 @@ function renderInspectionScreen() {
   elements.emptyState.hidden = true;
   elements.tableSection.hidden = false;
   renderInspectionTable();
+}
+
+function renderTargetMonthButtons() {
+  elements.targetMonthButtons.innerHTML = "";
+
+  state.availableMonths.forEach((month) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = `month-select-button${month === state.targetMonth ? " is-active" : ""}`;
+    button.dataset.targetMonth = month;
+    button.textContent = formatTargetMonthButton(month);
+    button.setAttribute("aria-pressed", month === state.targetMonth ? "true" : "false");
+    elements.targetMonthButtons.append(button);
+  });
 }
 
 function renderInspectionTable() {
@@ -577,6 +592,7 @@ function getPendingDays(month) {
   if (!month) return [];
 
   const currentMonth = getCurrentYearMonth();
+  if (compareYearMonth(month, MIN_SELECTABLE_MONTH) < 0) return [];
   const comparison = compareYearMonth(month, currentMonth);
   if (comparison > 0) return [];
 
@@ -602,7 +618,7 @@ function getPendingDays(month) {
 function buildPendingSummary() {
   const currentMonth = getCurrentYearMonth();
   const isCarryOver = compareYearMonth(state.targetMonth, currentMonth) < 0;
-  const prefix = isCarryOver ? "前月以前の未完了月を表示中。" : "今月の未入力日を表示中。";
+  const prefix = isCarryOver ? "前月分の未入力日を表示中。" : "今月分の未入力日を表示中。";
   return `${prefix} 対象日は ${state.pendingDays.join("、")} 日です。日付を押すと休みにできます。横スクロールで右側まで入力できます。`;
 }
 
@@ -752,10 +768,10 @@ function formatMonth(yearMonth) {
   return `${year}年${month}月`;
 }
 
-function formatTargetMonthPill(yearMonth) {
+function formatTargetMonthButton(yearMonth) {
   const currentMonth = getCurrentYearMonth();
-  const isCarryOver = compareYearMonth(yearMonth, currentMonth) < 0;
-  return isCarryOver ? `${formatMonth(yearMonth)} / 繰越分` : `${formatMonth(yearMonth)} / 今月分`;
+  const suffix = compareYearMonth(yearMonth, currentMonth) < 0 ? "前月分" : "今月分";
+  return `${formatMonth(yearMonth)}/${suffix}`;
 }
 
 function setEntryStatus(message, isError = false) {
@@ -800,6 +816,48 @@ function applyTheme(theme) {
 
 function initTheme() {
   syncThemeFromLauncher();
+}
+
+function syncTargetMonth(preferredMonth = getCurrentYearMonth()) {
+  state.availableMonths = getSelectableMonths();
+  state.targetMonth = resolveSelectableMonth(preferredMonth, state.availableMonths);
+  syncDraftForTargetMonth();
+}
+
+function getSelectableMonths() {
+  const currentMonth = getCurrentYearMonth();
+  if (compareYearMonth(currentMonth, MIN_SELECTABLE_MONTH) < 0) {
+    return [currentMonth];
+  }
+
+  const months = [];
+  let cursor = MIN_SELECTABLE_MONTH;
+
+  while (compareYearMonth(cursor, currentMonth) <= 0) {
+    if (cursor === currentMonth || getPendingDays(cursor).length > 0) {
+      months.push(cursor);
+    }
+    cursor = addMonths(cursor, 1);
+  }
+
+  return months;
+}
+
+function resolveSelectableMonth(preferredMonth, availableMonths) {
+  const currentMonth = getCurrentYearMonth();
+  if (availableMonths.includes(preferredMonth)) {
+    return preferredMonth;
+  }
+  if (availableMonths.includes(currentMonth)) {
+    return currentMonth;
+  }
+  return availableMonths[availableMonths.length - 1] || currentMonth;
+}
+
+function addMonths(yearMonth, delta) {
+  const { year, month } = parseYearMonth(yearMonth);
+  const next = new Date(year, month - 1 + delta, 1);
+  return toYearMonth(next.getFullYear(), next.getMonth() + 1);
 }
 
 function syncThemeFromLauncher() {
