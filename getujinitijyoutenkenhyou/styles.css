@@ -511,6 +511,11 @@ h1 {
   background: var(--accent-soft);
 }
 
+.day-head-button.is-holiday-selected {
+  background: var(--fixed-soft);
+  color: var(--fixed);
+}
+
 .day-stack {
   display: grid;
   gap: 3px;
@@ -525,6 +530,17 @@ h1 {
 .day-weekday {
   font-size: 0.82rem;
   color: var(--muted);
+}
+
+.day-flag {
+  min-width: 1.8em;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--fixed-soft);
+  color: var(--fixed);
+  font-size: 0.74rem;
+  font-weight: 800;
+  line-height: 1.4;
 }
 
 .check-cell {
@@ -563,6 +579,11 @@ h1 {
 }
 
 .check-button.is-fixed {
+  color: var(--fixed);
+  background: var(--fixed-soft);
+}
+
+.check-button.is-holiday {
   color: var(--fixed);
   background: var(--fixed-soft);
 }

@@ -14,8 +14,8 @@ const THEME_COLORS = Object.freeze({
   dark: "#0f1722"
 });
 const FIREBASE_REQUIRED_KEYS = ["apiKey", "authDomain", "projectId", "appId"];
-const INSPECTION_GUIDE_MESSAGE = "空欄 → レ → × → ▲　未入力日のみ表示しています。休みの日は日付を押してOKをタップしてください。上の送信ボタンで保存します。";
-const APP_VERSION = "20260308-6";
+const INSPECTION_GUIDE_MESSAGE = "空欄 → レ → × → ▲　未入力日のみ表示しています。休みの日は日付を押すとその日に休を一括入力できます。もう一度押すと解除できます。上の送信ボタンで保存します。";
+const APP_VERSION = "20260308-7";
 const sharedSettings = window.SharedLauncherSettings || null;
 
 const INSPECTION_GROUPS = [
@@ -130,6 +130,7 @@ const state = {
   availableMonths: [],
   pendingDays: [],
   draftsByMonth: {},
+  holidayBackupByMonth: {},
   store: null
 };
 
@@ -248,6 +249,7 @@ async function submitSend() {
     } else {
       delete state.draftsByMonth[month];
     }
+    dropHolidayBackupDays(month, completeDays);
 
     await showSendFarewell();
     returnToLauncherHome();
@@ -275,8 +277,15 @@ function getSendPlan() {
   }
 
   const nextChecksByDay = omitCheckDays(record.checksByDay, completeDays);
+  const nextHolidayDays = new Set(record.holidayDays);
   for (const day of completeDays) {
-    nextChecksByDay[String(day)] = normalizeDayChecks(monthDraft[String(day)] || createEmptyDayChecks());
+    const dayChecks = normalizeDayChecks(monthDraft[String(day)] || createEmptyDayChecks());
+    nextChecksByDay[String(day)] = dayChecks;
+    if (isHolidayDay(dayChecks)) {
+      nextHolidayDays.add(day);
+    } else {
+      nextHolidayDays.delete(day);
+    }
   }
 
   const payload = normalizeRecord({
@@ -284,7 +293,7 @@ function getSendPlan() {
     vehicle: state.session.vehicle,
     driver: state.session.driver,
     checksByDay: nextChecksByDay,
-    holidayDays: record.holidayDays
+    holidayDays: [...nextHolidayDays]
   });
 
   return {
@@ -307,6 +316,7 @@ function handleCheckTap(event) {
   const month = state.targetMonth;
   const monthDraft = state.draftsByMonth[month];
   if (!monthDraft?.[day]) return;
+  if (isHolidayDay(monthDraft[day])) return;
 
   const currentValue = monthDraft[day][itemId] || "";
   const nextValue = rotateCheck(currentValue);
@@ -335,47 +345,32 @@ async function handleDayHeadTap(event) {
 
   const day = Number(button.dataset.dayHeader);
   const month = state.targetMonth;
-  const monthDraft = state.draftsByMonth[month] || {};
-  const dayDraft = monthDraft[String(day)];
-  const hasInput = hasAnyCheckValue(dayDraft);
-  const confirmed = window.confirm(
-    hasInput
-      ? `${day}日を休みにしますか？\nOKで入力中の内容を消して、その日の欄を非表示にします。`
-      : `${day}日を休みにしますか？\nOKでその日の欄を非表示にします。`
-  );
+  const dayKey = String(day);
+  const monthDraft = {
+    ...(state.draftsByMonth[month] || {})
+  };
+  const dayDraft = normalizeDayChecks(monthDraft[dayKey] || createEmptyDayChecks());
 
-  if (!confirmed) return;
-
-  const record = getRecordForMonth(month);
-  const nextChecksByDay = omitCheckDays(record.checksByDay, [day]);
-  nextChecksByDay[String(day)] = createHolidayDayChecks();
-  const payload = normalizeRecord({
-    month,
-    vehicle: state.session.vehicle,
-    driver: state.session.driver,
-    checksByDay: nextChecksByDay,
-    holidayDays: [...record.holidayDays, day]
-  });
-
-  try {
-    await state.store.saveRecord(payload);
-    state.recordsByMonth[month] = payload;
-
-    const remainingDays = state.pendingDays.filter((pendingDay) => pendingDay !== day);
-    const remainingDraft = pickDraftDays(monthDraft, remainingDays);
-
-    if (Object.keys(remainingDraft).length) {
-      state.draftsByMonth[month] = remainingDraft;
-    } else {
-      delete state.draftsByMonth[month];
-    }
-
-    syncTargetMonth(month);
-    renderInspectionScreen();
-    setInspectionStatus(`${formatMonth(month)} の ${day}日を休として記録しました。`, false, true);
-  } catch (error) {
-    setInspectionStatus(`休み登録に失敗しました: ${error.message}`, true);
+  if (isHolidayDay(dayDraft)) {
+    monthDraft[dayKey] = popHolidayBackup(month, dayKey);
+    state.draftsByMonth[month] = monthDraft;
+    renderInspectionTable();
+    setInspectionStatus(`${formatMonth(month)} の ${day}日の休入力を解除しました。`, false, true);
+    return;
   }
+
+  if (hasAnyCheckValue(dayDraft)) {
+    const confirmed = window.confirm(`${day}日を休みにしますか？\nOKで入力中の内容を休に置き換えます。送信するまで保存はされません。`);
+    if (!confirmed) return;
+    storeHolidayBackup(month, dayKey, dayDraft);
+  } else {
+    clearHolidayBackup(month, dayKey);
+  }
+
+  monthDraft[dayKey] = createHolidayDayChecks();
+  state.draftsByMonth[month] = monthDraft;
+  renderInspectionTable();
+  setInspectionStatus(`${formatMonth(month)} の ${day}日に休を一括入力しました。送信で保存されます。`, false, true);
 }
 
 async function createStore() {
@@ -536,14 +531,18 @@ function renderInspectionTable() {
   headerRow.append(itemHead);
 
   for (const day of state.pendingDays) {
+    const dayKey = String(day);
+    const dayDraft = state.draftsByMonth[state.targetMonth]?.[dayKey] || createEmptyDayChecks();
+    const holidaySelected = isHolidayDay(dayDraft);
     const head = document.createElement("th");
     head.className = "day-head";
     head.scope = "col";
     head.innerHTML = [
-      `<button type="button" class="day-head-button" data-day-header="${day}" aria-label="${day}日を休みにする">`,
+      `<button type="button" class="day-head-button${holidaySelected ? " is-holiday-selected" : ""}" data-day-header="${day}" aria-label="${holidaySelected ? `${day}日の休入力を解除する` : `${day}日に休を一括入力する`}">`,
       '<span class="day-stack">',
       `<span class="day-number">${day}</span>`,
       `<span class="day-weekday">${getWeekdayLabel(state.targetMonth, day)}</span>`,
+      holidaySelected ? '<span class="day-flag">休</span>' : "",
       "</span>",
       "</button>"
     ].join("");
@@ -713,7 +712,7 @@ function buildPendingSummary() {
   const currentMonth = getCurrentYearMonth();
   const isCarryOver = compareYearMonth(state.targetMonth, currentMonth) < 0;
   const prefix = isCarryOver ? "前月分の未入力日を表示中。" : "今月分の未入力日を表示中。";
-  return `${prefix} 対象日は ${state.pendingDays.join("、")} 日です。日付を押すと休みにできます。横スクロールで右側まで入力できます。`;
+  return `${prefix} 対象日は ${state.pendingDays.join("、")} 日です。日付を押すと休を一括入力でき、もう一度押すと解除できます。横スクロールで右側まで入力できます。`;
 }
 
 function normalizeRecord(record) {
@@ -770,8 +769,75 @@ function hasAnyCheckValue(values) {
   return Object.values(normalizeDayChecks(values || {})).some((value) => value !== "");
 }
 
+function isHolidayDay(values) {
+  return Object.values(normalizeDayChecks(values || {})).every((value) => value === HOLIDAY_CHECK);
+}
+
 function isDayComplete(values) {
   return Object.values(normalizeDayChecks(values || {})).every((value) => value !== "");
+}
+
+function storeHolidayBackup(month, day, values) {
+  const monthBackup = {
+    ...(state.holidayBackupByMonth[String(month)] || {})
+  };
+  monthBackup[String(day)] = normalizeDayChecks(values || {});
+  state.holidayBackupByMonth[String(month)] = monthBackup;
+}
+
+function popHolidayBackup(month, day) {
+  const monthKey = String(month);
+  const dayKey = String(day);
+  const monthBackup = {
+    ...(state.holidayBackupByMonth[monthKey] || {})
+  };
+  const restored = normalizeDayChecks(monthBackup[dayKey] || createEmptyDayChecks());
+  delete monthBackup[dayKey];
+
+  if (Object.keys(monthBackup).length) {
+    state.holidayBackupByMonth[monthKey] = monthBackup;
+  } else {
+    delete state.holidayBackupByMonth[monthKey];
+  }
+
+  return restored;
+}
+
+function clearHolidayBackup(month, day) {
+  const monthKey = String(month);
+  const dayKey = String(day);
+  const monthBackup = state.holidayBackupByMonth[monthKey];
+  if (!monthBackup || !Object.prototype.hasOwnProperty.call(monthBackup, dayKey)) {
+    return;
+  }
+
+  const nextMonthBackup = { ...monthBackup };
+  delete nextMonthBackup[dayKey];
+
+  if (Object.keys(nextMonthBackup).length) {
+    state.holidayBackupByMonth[monthKey] = nextMonthBackup;
+  } else {
+    delete state.holidayBackupByMonth[monthKey];
+  }
+}
+
+function dropHolidayBackupDays(month, days) {
+  const monthKey = String(month);
+  const monthBackup = state.holidayBackupByMonth[monthKey];
+  if (!monthBackup) {
+    return;
+  }
+
+  const nextMonthBackup = { ...monthBackup };
+  for (const day of days) {
+    delete nextMonthBackup[String(day)];
+  }
+
+  if (Object.keys(nextMonthBackup).length) {
+    state.holidayBackupByMonth[monthKey] = nextMonthBackup;
+  } else {
+    delete state.holidayBackupByMonth[monthKey];
+  }
 }
 
 function omitCheckDays(checksByDay, days) {
@@ -820,6 +886,7 @@ function rotateCheck(value) {
 }
 
 function getCheckButtonClass(value) {
+  if (value === HOLIDAY_CHECK) return "is-holiday";
   if (value === "レ") return "is-good";
   if (value === "×") return "is-bad";
   if (value === "▲") return "is-fixed";
