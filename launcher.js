@@ -56,9 +56,13 @@ const state = {
   backupLoading: false,
   backupWorking: false,
 };
+const exitState = {
+  closing: false,
+};
 
 renderAll();
 bindEvents();
+setupExitHandling();
 registerServiceWorker();
 void initializeCloudSync();
 
@@ -655,8 +659,7 @@ function openApp(path) {
 }
 
 async function exitLauncher() {
-  await showSendFarewell();
-  await closeLauncher();
+  await performExitSequence({ broadcast: true });
 }
 
 async function showSendFarewell() {
@@ -689,7 +692,39 @@ async function showSendFarewell() {
   await new Promise((resolve) => setTimeout(resolve, 1800));
 }
 
+function setupExitHandling() {
+  const exitBridge = window.AppExitBridge;
+  if (!exitBridge) {
+    return;
+  }
+
+  exitBridge.ensureListening();
+  exitBridge.subscribe(() => {
+    void performExitSequence({ broadcast: false });
+  });
+}
+
+async function performExitSequence({ broadcast }) {
+  if (exitState.closing) {
+    return;
+  }
+
+  exitState.closing = true;
+
+  if (broadcast) {
+    window.AppExitBridge?.requestExit("launcher");
+  }
+
+  await showSendFarewell();
+  await closeLauncher();
+}
+
 async function closeLauncher() {
+  if (window.AppExitBridge?.closeCurrentWindow) {
+    await window.AppExitBridge.closeCurrentWindow();
+    return;
+  }
+
   try {
     window.close();
   } catch {

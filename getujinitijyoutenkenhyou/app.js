@@ -131,6 +131,7 @@ const state = {
   pendingDays: [],
   draftsByMonth: {},
   holidayBackupByMonth: {},
+  shutdownInProgress: false,
   store: null
 };
 
@@ -149,6 +150,7 @@ elements.targetMonthButtons.addEventListener("click", handleTargetMonthSelect);
 elements.tableHead.addEventListener("click", handleDayHeadTap);
 elements.tableBody.addEventListener("click", handleCheckTap);
 document.addEventListener("visibilitychange", handleVisibilityChange);
+setupExitHandling();
 
 boot().catch((error) => {
   setEntryStatus(`初期化に失敗しました: ${error.message}`, true);
@@ -258,6 +260,35 @@ async function submitSend() {
   } finally {
     toggleBusy(elements.sendButton, false, "送信");
   }
+}
+
+function setupExitHandling() {
+  const exitBridge = window.AppExitBridge;
+  if (!exitBridge) {
+    return;
+  }
+
+  exitBridge.ensureListening();
+  exitBridge.subscribe(() => {
+    void shutdownApp();
+  });
+}
+
+async function shutdownApp() {
+  if (state.shutdownInProgress) {
+    return;
+  }
+
+  state.shutdownInProgress = true;
+  closeSendConfirmDialog();
+  await showSendFarewell();
+
+  if (window.AppExitBridge?.closeCurrentWindow) {
+    await window.AppExitBridge.closeCurrentWindow();
+    return;
+  }
+
+  window.location.replace("../index.html");
 }
 
 function getSendPlan() {

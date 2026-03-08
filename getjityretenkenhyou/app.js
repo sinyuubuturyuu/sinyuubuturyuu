@@ -16,6 +16,9 @@
       const SETTINGS_BACKUP_SLOT = 1;
       const LAST_COMMIT_PUSHED_AT = "2026-03-01 21:33";
       const GITHUB_REPO_API_LATEST_COMMIT = "https://api.github.com/repos/sinyuubuturyuu/getujityretenkenhyou/commits?sha=main&per_page=1";
+      const exitState = {
+        closing: false
+      };
 
       const TRUCK_TYPES = {
         LOW12: "low12",
@@ -1322,6 +1325,15 @@
         window.location.replace("../index.html");
       }
 
+      function setupExitHandling() {
+        const exitBridge = window.AppExitBridge;
+        if (!exitBridge) return;
+        exitBridge.ensureListening();
+        exitBridge.subscribe(() => {
+          void shutdownApp();
+        });
+      }
+
       async function showSendFarewell() {
         if (!el.sendFarewell) return;
         el.sendFarewell.classList.add("show");
@@ -1344,6 +1356,18 @@
           });
         }
         await new Promise((resolve) => setTimeout(resolve, 1800));
+      }
+
+      async function shutdownApp() {
+        if (exitState.closing) return;
+        exitState.closing = true;
+        closeSendConfirmDialog();
+        await showSendFarewell();
+        if (window.AppExitBridge && typeof window.AppExitBridge.closeCurrentWindow === "function") {
+          await window.AppExitBridge.closeCurrentWindow();
+          return;
+        }
+        returnToLauncherHome();
       }
 
       async function exportCsv() {
@@ -1944,6 +1968,7 @@
         currentScreen = FLOW_SCREENS.BASIC;
         buildTires();
         bindEvents();
+        setupExitHandling();
         saveCurrent();
         renderAll();
         void refreshPreviousFromCloud();
