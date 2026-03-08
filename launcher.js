@@ -11,7 +11,6 @@ const elements = {
   app1Button: document.getElementById("app1Button"),
   app2Button: document.getElementById("app2Button"),
   settingsButton: document.getElementById("settingsButton"),
-  installHint: document.getElementById("installHint"),
   settingsDialog: document.getElementById("settingsDialog"),
   settingsForm: document.getElementById("settingsForm"),
   closeSettingsButton: document.getElementById("closeSettingsButton"),
@@ -103,10 +102,6 @@ function bindEvents() {
       elements.settingsDialog.close();
     }
   });
-
-  window.addEventListener("appinstalled", () => {
-    elements.installHint.textContent = "ホーム画面への追加が完了しました。";
-  });
 }
 
 function normalizePath(value, fallback) {
@@ -128,7 +123,7 @@ function registerServiceWorker() {
 
   window.addEventListener("load", () => {
     navigator.serviceWorker.register("./sw.js").catch(() => {
-      elements.installHint.textContent = "インストール準備に失敗しました。ブラウザを再読み込みしてください。";
+      console.warn("Service worker registration failed.");
     });
   });
 }
