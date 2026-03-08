@@ -1,0 +1,100 @@
+﻿<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>月次日常点検表アプリ</title>
+  <meta name="theme-color" content="#cb5b2d" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="apple-mobile-web-app-title" content="月次点検" />
+  <link rel="manifest" href="./manifest.webmanifest?v=20260307-3" />
+  <link rel="apple-touch-icon" href="./icons/apple-touch-icon.png" />
+  <link rel="stylesheet" href="./styles.css?v=20260307-3" />
+</head>
+<body>
+  <div class="ambient ambient-left" aria-hidden="true"></div>
+  <div class="ambient ambient-right" aria-hidden="true"></div>
+
+  <main class="app-shell">
+    <section id="entryScreen" class="screen screen-entry">
+      <div class="brand-block reveal">
+        <h1>月次日常点検表アプリ</h1>
+      </div>
+
+      <div class="entry-layout reveal reveal-delay-1">
+        <form id="entryForm" class="card entry-card">
+          <div class="card-head">
+            <h2>基本情報</h2>
+          </div>
+
+          <label class="field">
+            <span>車番</span>
+            <input id="vehicleInput" name="vehicle" type="text" inputmode="text" autocomplete="off" placeholder="例: 68-67" />
+          </label>
+
+          <label class="field">
+            <span>運転者（点検者）</span>
+            <input id="driverInput" name="driver" type="text" inputmode="text" autocomplete="name" placeholder="例: 田中" />
+          </label>
+
+          <div class="entry-actions">
+            <button id="startButton" class="button button-primary" type="submit">点検開始</button>
+            <a class="button button-ghost launcher-back-link" href="../index.html">ランチャーへ戻る</a>
+          </div>
+          <p id="entryStatus" class="status" aria-live="polite"></p>
+        </form>
+
+        <aside class="card note-card">
+          <div class="card-head">
+            <h2>摘要</h2>
+          </div>
+          <ol class="instruction-list">
+            <li>点検の結果良好なときはレ印、異常あるときは×印を記入すること。</li>
+            <li>異常あるも整備したときは▲印を記入すること。</li>
+          </ol>
+          <p class="sub-note">※印の点検は、走行距離や運行時の状態から判断して適切な時期に行う前提です。</p>
+        </aside>
+      </div>
+    </section>
+
+    <section id="inspectionScreen" class="screen screen-inspection" hidden>
+      <header class="inspection-topbar reveal">
+        <button id="backButton" class="button button-ghost" type="button">戻る</button>
+
+        <div class="session-summary">
+          <p id="targetMonthLabel" class="month-pill"></p>
+          <h2 id="sessionTitle">車番 - / 運転者 -</h2>
+          <p id="pendingSummary" class="pending-summary" hidden aria-hidden="true"></p>
+          <p id="storageModeLabel" hidden aria-hidden="true"></p>
+        </div>
+
+        <button id="sendButton" class="button button-primary" type="button">送信</button>
+      </header>
+
+      <p id="inspectionStatus" class="status reveal reveal-delay-2" aria-live="polite"></p>
+
+      <section id="tableSection" class="table-section reveal reveal-delay-2">
+        <div class="table-shell">
+          <table class="inspection-table" aria-label="月次日常点検の入力表">
+            <thead id="inspectionTableHead"></thead>
+            <tbody id="inspectionTableBody"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="emptyState" class="card empty-state" hidden>
+        <div class="card-head">
+          <h2>送信対象はありません</h2>
+          <p>対象月の必要日分はすべて入力済みです。</p>
+        </div>
+        <p id="emptyStateText">次の入力日が来るまで、この画面には未入力日が出ません。</p>
+      </section>
+    </section>
+  </main>
+
+  <script src="./firebase-config.js?v=20260307-3"></script>
+  <script src="./app.js?v=20260307-3"></script>
+</body>
+</html>
+

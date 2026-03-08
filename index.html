@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>シンユウ物流アプリランチャー</title>
+  <meta name="theme-color" content="#ffffff">
+  <meta name="description" content="点検アプリを設定して起動するランチャー">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="シンユウ物流">
+  <link rel="manifest" href="./manifest.webmanifest">
+  <link rel="icon" href="./sinyuubuturyuu-icon.png" type="image/png">
+  <link rel="apple-touch-icon" href="./icon-192.png">
+  <link rel="stylesheet" href="./launcher.css">
+</head>
+<body>
+  <main class="launcher">
+    <section class="launcher-card" aria-label="アプリ選択">
+      <img class="launcher-logo" src="./sinyuubuturyuu-icon.png" alt="シンユウ物流アプリアイコン">
+      <h1>シンユウ物流アプリ</h1>
+      <p class="launcher-subtitle">起動するアプリを選択してください</p>
+      <p id="installHint" class="install-hint">スマホではブラウザの共有またはメニューからホーム画面に追加できます</p>
+
+      <div class="button-group">
+        <button id="app1Button" class="launcher-button primary" type="button"></button>
+        <button id="app2Button" class="launcher-button primary" type="button"></button>
+        <button id="settingsButton" class="launcher-button secondary" type="button">設定</button>
+      </div>
+    </section>
+  </main>
+
+  <dialog id="settingsDialog" class="settings-dialog" aria-label="起動設定">
+    <form id="settingsForm" class="settings-panel" method="dialog">
+      <div class="settings-header">
+        <h2>設定</h2>
+        <button id="closeSettingsButton" class="text-button" type="button" aria-label="閉じる">閉じる</button>
+      </div>
+
+      <div class="settings-fields">
+        <label class="field">
+          <span>アプリ1の名前</span>
+          <input id="app1Name" name="app1Name" type="text" autocomplete="off">
+        </label>
+        <label class="field">
+          <span>アプリ1の起動先</span>
+          <input id="app1Path" name="app1Path" type="text" autocomplete="off">
+        </label>
+        <label class="field">
+          <span>アプリ2の名前</span>
+          <input id="app2Name" name="app2Name" type="text" autocomplete="off">
+        </label>
+        <label class="field">
+          <span>アプリ2の起動先</span>
+          <input id="app2Path" name="app2Path" type="text" autocomplete="off">
+        </label>
+      </div>
+
+      <p id="settingsStatus" class="settings-status" aria-live="polite"></p>
+
+      <div class="settings-actions">
+        <button id="resetSettingsButton" class="launcher-button secondary" type="button">初期値に戻す</button>
+        <button class="launcher-button primary" type="submit">保存</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="./launcher.js"></script>
+</body>
+</html>

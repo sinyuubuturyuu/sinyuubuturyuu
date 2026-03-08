@@ -1,0 +1,14 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "type": "chrome",
+      "request": "launch",
+      "name": "Chrome: localhost:8081",
+      "url": "http://localhost:8081",
+      "webRoot": "${workspaceFolder}",
+      "preLaunchTask": "Start static server (8081)",
+      "postDebugTask": "Stop static server (8081)"
+    }
+  ]
+}

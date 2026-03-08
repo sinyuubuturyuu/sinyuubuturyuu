@@ -1,0 +1,212 @@
+:root {
+  --bg: #ffffff;
+  --text: #18212b;
+  --muted: #667085;
+  --line: #d7dee8;
+  --primary: #1769d2;
+  --primary-hover: #0f56af;
+  --secondary: #f5f7fa;
+  --secondary-hover: #e9eef5;
+  --shadow: 0 20px 50px rgba(23, 34, 51, 0.08);
+  --radius: 28px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  min-height: 100%;
+  font-family: "Hiragino Sans", "Yu Gothic UI", sans-serif;
+  background: var(--bg);
+  color: var(--text);
+}
+
+body {
+  min-height: 100vh;
+}
+
+.launcher {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background:
+    radial-gradient(circle at top, rgba(23, 105, 210, 0.08), transparent 32%),
+    radial-gradient(circle at bottom, rgba(199, 19, 122, 0.08), transparent 28%),
+    var(--bg);
+}
+
+.launcher-card {
+  width: min(100%, 460px);
+  padding: 36px 28px 28px;
+  border: 1px solid rgba(24, 33, 43, 0.08);
+  border-radius: var(--radius);
+  background: #ffffff;
+  box-shadow: var(--shadow);
+  text-align: center;
+}
+
+.launcher-logo {
+  width: 132px;
+  max-width: 42%;
+  height: auto;
+  display: block;
+  margin: 0 auto 18px;
+}
+
+.launcher-card h1 {
+  margin: 0;
+  font-size: clamp(1.8rem, 4vw, 2.3rem);
+  line-height: 1.2;
+}
+
+.launcher-subtitle {
+  margin: 12px 0 28px;
+  color: var(--muted);
+  font-size: 0.98rem;
+}
+
+.install-hint {
+  margin: -14px 0 24px;
+  color: var(--muted);
+  font-size: 0.88rem;
+  line-height: 1.6;
+}
+
+.button-group,
+.settings-actions {
+  display: grid;
+  gap: 14px;
+}
+
+.launcher-button {
+  width: 100%;
+  min-height: 58px;
+  border: 0;
+  border-radius: 18px;
+  padding: 14px 18px;
+  font-size: 1.02rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: transform 120ms ease, background-color 120ms ease, box-shadow 120ms ease;
+}
+
+.launcher-button:hover,
+.launcher-button:focus-visible {
+  transform: translateY(-1px);
+}
+
+.launcher-button:focus-visible,
+.text-button:focus-visible,
+.field input:focus-visible {
+  outline: 3px solid rgba(23, 105, 210, 0.2);
+  outline-offset: 2px;
+}
+
+.launcher-button.primary {
+  background: var(--primary);
+  color: #ffffff;
+  box-shadow: 0 12px 24px rgba(23, 105, 210, 0.2);
+}
+
+.launcher-button.primary:hover,
+.launcher-button.primary:focus-visible {
+  background: var(--primary-hover);
+}
+
+.launcher-button.secondary {
+  background: var(--secondary);
+  color: var(--text);
+}
+
+.launcher-button.secondary:hover,
+.launcher-button.secondary:focus-visible {
+  background: var(--secondary-hover);
+}
+
+.settings-dialog {
+  width: min(calc(100% - 24px), 520px);
+  border: 0;
+  border-radius: 26px;
+  padding: 0;
+  box-shadow: 0 30px 80px rgba(18, 32, 56, 0.2);
+}
+
+.settings-dialog::backdrop {
+  background: rgba(18, 32, 56, 0.28);
+  backdrop-filter: blur(3px);
+}
+
+.settings-panel {
+  padding: 24px;
+  background: #ffffff;
+}
+
+.settings-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.settings-header h2 {
+  margin: 0;
+  font-size: 1.35rem;
+}
+
+.text-button {
+  border: 0;
+  background: transparent;
+  color: var(--primary);
+  font-size: 0.95rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.settings-fields {
+  display: grid;
+  gap: 14px;
+}
+
+.field {
+  display: grid;
+  gap: 8px;
+  text-align: left;
+}
+
+.field span {
+  font-size: 0.95rem;
+  font-weight: 700;
+}
+
+.field input {
+  width: 100%;
+  min-height: 48px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 12px 14px;
+  font: inherit;
+  color: inherit;
+  background: #ffffff;
+}
+
+.settings-status {
+  min-height: 1.5em;
+  margin: 14px 0 18px;
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+
+@media (max-width: 520px) {
+  .launcher-card {
+    padding: 28px 20px 20px;
+  }
+
+  .settings-panel {
+    padding: 20px;
+  }
+}
