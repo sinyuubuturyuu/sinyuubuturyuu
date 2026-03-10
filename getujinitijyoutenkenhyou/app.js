@@ -110,7 +110,6 @@ const elements = {
   inspectionStatus: document.getElementById("inspectionStatus"),
   sessionTitle: document.getElementById("sessionTitle"),
   pendingSummary: document.getElementById("pendingSummary"),
-  storageModeLabel: document.getElementById("storageModeLabel"),
   tableSection: document.getElementById("tableSection"),
   emptyState: document.getElementById("emptyState"),
   emptyStateText: document.getElementById("emptyStateText"),
@@ -124,6 +123,14 @@ const state = {
   sharedSelection: {
     vehicle: "",
     driver: ""
+  },
+  loadInfo: {
+    source: "",
+    vehicle: "",
+    driver: "",
+    recordCount: 0,
+    loadedMonths: [],
+    duplicateMonths: []
   },
   recordsByMonth: {},
   targetMonth: "",
@@ -145,7 +152,6 @@ elements.sendConfirmOkButton?.addEventListener("click", () => {
   closeSendConfirmDialog();
   void submitSend();
 });
-elements.targetMonthButtons.addEventListener("click", handleTargetMonthSelect);
 elements.tableHead.addEventListener("click", handleDayHeadTap);
 elements.tableBody.addEventListener("click", handleCheckTap);
 document.addEventListener("visibilitychange", handleVisibilityChange);
@@ -195,6 +201,14 @@ async function handleStart(event) {
 function handleBack() {
   clearInspectionStatus();
   state.session = null;
+  state.loadInfo = {
+    source: state.store?.label || "",
+    vehicle: "",
+    driver: "",
+    recordCount: 0,
+    loadedMonths: [],
+    duplicateMonths: []
+  };
   state.draftsByMonth = {};
   state.holidayDraftByMonth = {};
   refreshSharedSelection();
@@ -335,14 +349,13 @@ function handleCheckTap(event) {
   button.setAttribute("aria-label", `${day}日 ${ITEM_LABELS[itemId] || itemId} ${nextValue || "未入力"}`);
 }
 
-function handleTargetMonthSelect(event) {
-  const button = event.target.closest("[data-target-month]");
-  if (!button || !state.session) return;
-
-  const nextMonth = button.dataset.targetMonth;
+function selectTargetMonth(nextMonth) {
+  if (!state.session) return;
   if (!nextMonth || nextMonth === state.targetMonth) return;
+  if (!state.availableMonths.includes(nextMonth)) return;
 
-  syncTargetMonth(nextMonth);
+  state.targetMonth = nextMonth;
+  syncDraftForTargetMonth();
   clearInspectionStatus();
   renderInspectionScreen();
 }
@@ -414,7 +427,13 @@ function createFirestoreStore(db, firestoreModule) {
       const ref = collection(db, appSettings.collectionName);
       const q = query(ref, where("vehicle", "==", vehicle), where("driver", "==", driver));
       const snapshot = await getDocs(q);
-      return snapshot.docs.map((snapshotDoc) => normalizeRecord(snapshotDoc.data()));
+      return snapshot.docs.map((snapshotDoc) => ({
+        ...normalizeRecord(snapshotDoc.data()),
+        _meta: {
+          docId: snapshotDoc.id,
+          updatedAtMs: toEpochMillis(snapshotDoc.data().updatedAt)
+        }
+      }));
     },
     async saveRecord(record) {
       const ref = doc(db, appSettings.collectionName, buildRecordId(record.month, record.vehicle, record.driver));
@@ -438,7 +457,13 @@ function createLocalStore() {
       const store = readLocalStore();
       return Object.values(store.records)
         .filter((record) => record.vehicle === vehicle && record.driver === driver)
-        .map((record) => normalizeRecord(record));
+        .map((record) => ({
+          ...normalizeRecord(record),
+          _meta: {
+            docId: buildRecordId(record.month, record.vehicle, record.driver),
+            updatedAtMs: toEpochMillis(record.updatedAt)
+          }
+        }));
     },
     async saveRecord(record) {
       const store = readLocalStore();
@@ -450,8 +475,33 @@ function createLocalStore() {
 
 async function loadRecordMap(vehicle, driver) {
   const records = await state.store.listRecords(vehicle, driver);
+  const monthCounts = records.reduce((map, record) => {
+    const monthKey = String(record.month || "");
+    map[monthKey] = (map[monthKey] || 0) + 1;
+    return map;
+  }, {});
+  const duplicateMonths = Object.entries(monthCounts)
+    .filter(([, count]) => count > 1)
+    .map(([month]) => month)
+    .sort(compareYearMonth);
+
+  state.loadInfo = {
+    source: state.store?.label || "",
+    vehicle,
+    driver,
+    recordCount: records.length,
+    loadedMonths: records
+      .map((record) => record.month)
+      .filter(Boolean)
+      .sort(compareYearMonth),
+    duplicateMonths
+  };
+
   return records.reduce((map, record) => {
-    map[record.month] = record;
+    const existing = map[record.month];
+    if (!existing || shouldReplaceMonthRecord(existing, record)) {
+      map[record.month] = record;
+    }
     return map;
   }, {});
 }
@@ -484,6 +534,8 @@ function renderInspectionScreen() {
   if (!state.pendingDays.length) {
     const currentMonth = getCurrentYearMonth();
     const isCurrentMonth = state.targetMonth === currentMonth;
+    elements.pendingSummary.hidden = false;
+    elements.pendingSummary.setAttribute("aria-hidden", "false");
     elements.pendingSummary.textContent = isCurrentMonth
       ? "本日分まで入力済み、または休み登録済みです。次の未入力日が来たら表示されます。"
       : "対象月の未入力日はありません。";
@@ -496,6 +548,8 @@ function renderInspectionScreen() {
   }
 
   elements.pendingSummary.textContent = buildPendingSummary();
+  elements.pendingSummary.hidden = false;
+  elements.pendingSummary.setAttribute("aria-hidden", "false");
   elements.emptyState.hidden = true;
   elements.tableSection.hidden = false;
   renderInspectionTable();
@@ -511,6 +565,9 @@ function renderTargetMonthButtons() {
     button.dataset.targetMonth = month;
     button.textContent = formatTargetMonthButton(month);
     button.setAttribute("aria-pressed", month === state.targetMonth ? "true" : "false");
+    button.addEventListener("click", () => {
+      selectTargetMonth(month);
+    });
     elements.targetMonthButtons.append(button);
   });
 }
@@ -715,8 +772,10 @@ function getPendingDays(month) {
 
 function buildPendingSummary() {
   const currentMonth = getCurrentYearMonth();
-  const isCarryOver = compareYearMonth(state.targetMonth, currentMonth) < 0;
-  const prefix = isCarryOver ? "前月分の未入力日を表示中。" : "今月分の未入力日を表示中。";
+  const isCurrentMonth = state.targetMonth === currentMonth;
+  const prefix = isCurrentMonth
+    ? "今月分の未入力日を表示中。"
+    : `${formatMonth(state.targetMonth)} の未入力日を表示中。`;
   return `${prefix} 対象日は ${state.pendingDays.join("、")} 日です。日付を押すと休みとして色付けでき、もう一度押すと解除できます。横スクロールで右側まで入力できます。`;
 }
 
@@ -917,7 +976,7 @@ function formatMonth(yearMonth) {
 
 function formatTargetMonthButton(yearMonth) {
   const currentMonth = getCurrentYearMonth();
-  const suffix = compareYearMonth(yearMonth, currentMonth) < 0 ? "前月分" : "今月分";
+  const suffix = yearMonth === currentMonth ? "今月分" : "未入力分";
   return `${formatMonth(yearMonth)}/${suffix}`;
 }
 
@@ -946,6 +1005,57 @@ function setStatus(element, message, isError = false, isSuccess = false) {
   element.textContent = message;
   element.classList.toggle("is-error", Boolean(message) && isError);
   element.classList.toggle("is-success", Boolean(message) && !isError && isSuccess);
+}
+
+function visualizeLookupText(value) {
+  return String(value || "")
+    .replace(/ /g, "[space]")
+    .replace(/\u3000/g, "[wide-space]");
+}
+
+function shouldReplaceMonthRecord(currentRecord, nextRecord) {
+  const currentUpdatedAt = Number(currentRecord?._meta?.updatedAtMs || 0);
+  const nextUpdatedAt = Number(nextRecord?._meta?.updatedAtMs || 0);
+  if (nextUpdatedAt !== currentUpdatedAt) {
+    return nextUpdatedAt > currentUpdatedAt;
+  }
+
+  const currentDocId = String(currentRecord?._meta?.docId || "");
+  const nextDocId = String(nextRecord?._meta?.docId || "");
+  return nextDocId.localeCompare(currentDocId) > 0;
+}
+
+function toEpochMillis(value) {
+  if (!value) {
+    return 0;
+  }
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+  if (typeof value === "string") {
+    const parsed = Date.parse(value);
+    return Number.isNaN(parsed) ? 0 : parsed;
+  }
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? 0 : value.getTime();
+  }
+  if (typeof value.toMillis === "function") {
+    try {
+      const millis = value.toMillis();
+      return Number.isFinite(millis) ? millis : 0;
+    } catch {
+      return 0;
+    }
+  }
+  if (typeof value.toDate === "function") {
+    try {
+      const date = value.toDate();
+      return date instanceof Date && !Number.isNaN(date.getTime()) ? date.getTime() : 0;
+    } catch {
+      return 0;
+    }
+  }
+  return 0;
 }
 
 function toggleBusy(button, busy, idleLabel) {
@@ -978,7 +1088,7 @@ function getSelectableMonths() {
   }
 
   const months = [];
-  let cursor = MIN_SELECTABLE_MONTH;
+  let cursor = getSelectableMonthStart(currentMonth);
 
   while (compareYearMonth(cursor, currentMonth) <= 0) {
     if (cursor === currentMonth || getPendingDays(cursor).length > 0) {
@@ -988,6 +1098,12 @@ function getSelectableMonths() {
   }
 
   return months;
+}
+
+function getSelectableMonthStart(currentMonth) {
+  const { year } = parseYearMonth(currentMonth);
+  const yearStart = toYearMonth(year, 1);
+  return compareYearMonth(yearStart, MIN_SELECTABLE_MONTH) < 0 ? MIN_SELECTABLE_MONTH : yearStart;
 }
 
 function resolveSelectableMonth(preferredMonth, availableMonths) {
@@ -1048,4 +1164,3 @@ function canAccessServiceWorkerApis() {
 
   return window.location.protocol === "http:" || window.location.protocol === "https:";
 }
-
