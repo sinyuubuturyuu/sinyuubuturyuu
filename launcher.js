@@ -727,7 +727,6 @@ async function performExitSequence({ broadcast }) {
 async function closeLauncher() {
   if (window.AppExitBridge?.closeCurrentWindow) {
     await window.AppExitBridge.closeCurrentWindow();
-    return;
   }
 
   try {
@@ -735,9 +734,22 @@ async function closeLauncher() {
   } catch {
     // noop
   }
-  await new Promise((resolve) => setTimeout(resolve, 120));
-  if (!document.hidden) {
+
+  await new Promise((resolve) => setTimeout(resolve, 500));
+
+  // 確実にページをブランク状態に置き換える
+  try {
+    const blankDoc = document.open();
+    blankDoc.write("");
+    blankDoc.close();
+  } catch {
+    // noop
+  }
+
+  try {
     window.location.replace("about:blank");
+  } catch {
+    // noop
   }
 }
 

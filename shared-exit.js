@@ -357,7 +357,21 @@
       return true;
     }
 
-    window.location.replace(buildFallbackExitUrl());
+    // 確実にドキュメントを空にする
+    try {
+      const blankDoc = document.open();
+      blankDoc.write("");
+      blankDoc.close();
+    } catch {
+      // noop
+    }
+
+    try {
+      window.location.replace("about:blank");
+    } catch {
+      // noop
+    }
+
     return false;
   }
 

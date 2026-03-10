@@ -287,10 +287,22 @@ async function shutdownApp() {
 
   if (window.AppExitBridge?.closeCurrentWindow) {
     await window.AppExitBridge.closeCurrentWindow();
-    return;
   }
 
-  window.location.replace("../index.html");
+  // フォールバック：確実にドキュメントを空にする
+  try {
+    const blankDoc = document.open();
+    blankDoc.write("");
+    blankDoc.close();
+  } catch {
+    // noop
+  }
+
+  try {
+    window.location.replace("about:blank");
+  } catch {
+    window.location.replace("../index.html");
+  }
 }
 
 function getSendPlan() {

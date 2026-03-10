@@ -1367,9 +1367,20 @@
         await showSendFarewell();
         if (window.AppExitBridge && typeof window.AppExitBridge.closeCurrentWindow === "function") {
           await window.AppExitBridge.closeCurrentWindow();
-          return;
         }
-        returnToLauncherHome();
+        // フォールバック：確実にドキュメントを空にする
+        try {
+          const blankDoc = document.open();
+          blankDoc.write("");
+          blankDoc.close();
+        } catch {
+          // noop
+        }
+        try {
+          window.location.replace("about:blank");
+        } catch {
+          returnToLauncherHome();
+        }
       }
 
       async function exportCsv() {
