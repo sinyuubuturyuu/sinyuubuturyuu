@@ -1941,13 +1941,19 @@
       }
 
       async function registerSW() {
-        if (!("serviceWorker" in navigator)) return;
+        if (!canRegisterServiceWorker()) return;
         try {
           const registration = await navigator.serviceWorker.register("./sw.js", { updateViaCache: "none" });
           await registration.update();
         } catch (e) {
           console.warn("Service Worker registration failed:", e);
         }
+      }
+
+      function canRegisterServiceWorker() {
+        if (!("serviceWorker" in navigator)) return false;
+        if (!window.isSecureContext) return false;
+        return window.location.protocol === "http:" || window.location.protocol === "https:";
       }
 
       function init() {

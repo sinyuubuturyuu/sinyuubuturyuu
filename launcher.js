@@ -741,8 +741,20 @@ async function closeLauncher() {
   }
 }
 
-function registerServiceWorker() {
+function canRegisterServiceWorker() {
   if (!("serviceWorker" in navigator)) {
+    return false;
+  }
+
+  if (!window.isSecureContext) {
+    return false;
+  }
+
+  return window.location.protocol === "http:" || window.location.protocol === "https:";
+}
+
+function registerServiceWorker() {
+  if (!canRegisterServiceWorker()) {
     return;
   }
 
