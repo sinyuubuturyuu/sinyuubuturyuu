@@ -16,10 +16,6 @@
       const SETTINGS_BACKUP_SLOT = 1;
       const LAST_COMMIT_PUSHED_AT = "2026-03-01 21:33";
       const GITHUB_REPO_API_LATEST_COMMIT = "https://api.github.com/repos/sinyuubuturyuu/getujityretenkenhyou/commits?sha=main&per_page=1";
-      const EXIT_APP_ID = "monthly-tire";
-      const exitState = {
-        closing: false
-      };
 
       const TRUCK_TYPES = {
         LOW12: "low12",
@@ -1326,16 +1322,6 @@
         window.location.replace("../index.html");
       }
 
-      function setupExitHandling() {
-        const exitBridge = window.AppExitBridge;
-        if (!exitBridge) return;
-        exitBridge.ensureListening();
-        exitBridge.subscribe((signal) => {
-          exitBridge.acknowledgeExit && exitBridge.acknowledgeExit(signal, EXIT_APP_ID);
-          void shutdownApp();
-        }, { appId: EXIT_APP_ID });
-      }
-
       async function showSendFarewell() {
         if (!el.sendFarewell) return;
         el.sendFarewell.classList.add("show");
@@ -1360,26 +1346,42 @@
         await new Promise((resolve) => setTimeout(resolve, 1800));
       }
 
-      async function shutdownApp() {
-        if (exitState.closing) return;
-        exitState.closing = true;
-        closeSendConfirmDialog();
-        await showSendFarewell();
-        if (window.AppExitBridge && typeof window.AppExitBridge.closeCurrentWindow === "function") {
-          await window.AppExitBridge.closeCurrentWindow();
-        }
-        // フォールバック：確実にドキュメントを空にする
+      async function removedShutdownApp() {
+        
+        // Service Worker を登録解除
         try {
-          const blankDoc = document.open();
-          blankDoc.write("");
-          blankDoc.close();
+          const registrations = await navigator.serviceWorker.getRegistrations();
+          registrations.forEach((registration) => {
+            registration.unregister().catch(() => {});
+          });
         } catch {
           // noop
         }
+        
+        
+        return;
+        
+        // ページの内容を完全にクリア
         try {
-          window.location.replace("about:blank");
+          document.documentElement.innerHTML = "";
         } catch {
-          returnToLauncherHome();
+          // noop
+        }
+        
+        try {
+          window.location.href = "about:blank";
+        } catch {
+          // noop
+        }
+        
+        await new Promise((resolve) => setTimeout(resolve, 500));
+        
+        // 最後の手段：ページを非表示にする
+        try {
+          document.body.style.display = "none";
+          document.documentElement.style.display = "none";
+        } catch {
+          // noop
         }
       }
 
@@ -1987,7 +1989,6 @@
         currentScreen = FLOW_SCREENS.BASIC;
         buildTires();
         bindEvents();
-        setupExitHandling();
         saveCurrent();
         renderAll();
         void refreshPreviousFromCloud();
