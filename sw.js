@@ -1,4 +1,4 @@
-const CACHE_NAME = "sinyuubuturyuu-launcher-v4";
+const CACHE_NAME = "sinyuubuturyuu-launcher-v5";
 const APP_SHELL = [
   "./",
   "./index.html",
@@ -8,6 +8,12 @@ const APP_SHELL = [
   "./sinyuubuturyuu-icon.png",
   "./icon-192.png",
   "./icon-512.png",
+];
+const NETWORK_FIRST_PATH_SUFFIXES = [
+  "/index.html",
+  "/launcher.css",
+  "/launcher.js",
+  "/manifest.webmanifest",
 ];
 
 self.addEventListener("install", (event) => {
@@ -38,6 +44,36 @@ self.addEventListener("fetch", (event) => {
   const url = new URL(event.request.url);
   if (url.origin !== self.location.origin) {
     event.respondWith(fetch(event.request));
+    return;
+  }
+
+  if (event.request.mode === "navigate") {
+    event.respondWith(
+      fetch(event.request)
+        .then((response) => {
+          const responseClone = response.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put("./index.html", responseClone));
+          return response;
+        })
+        .catch(() => caches.match("./index.html"))
+    );
+    return;
+  }
+
+  if (NETWORK_FIRST_PATH_SUFFIXES.some((suffix) => url.pathname.endsWith(suffix))) {
+    event.respondWith(
+      fetch(event.request)
+        .then((response) => {
+          if (!response || response.status !== 200 || response.type !== "basic") {
+            return response;
+          }
+
+          const responseClone = response.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, responseClone));
+          return response;
+        })
+        .catch(() => caches.match(event.request))
+    );
     return;
   }
 

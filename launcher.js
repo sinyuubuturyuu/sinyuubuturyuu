@@ -1157,8 +1157,10 @@ function registerServiceWorker() {
   }
 
   window.addEventListener("load", () => {
-    navigator.serviceWorker.register("./sw.js").catch(() => {
-      console.warn("Service worker registration failed.");
-    });
+    navigator.serviceWorker.register("./sw.js", { updateViaCache: "none" })
+      .then((registration) => registration.update())
+      .catch(() => {
+        console.warn("Service worker registration failed.");
+      });
   });
 }
