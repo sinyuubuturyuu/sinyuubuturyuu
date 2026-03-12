@@ -114,6 +114,7 @@
         settingsScreen: document.getElementById("settingsScreen"),
         targetMonthButtons: document.getElementById("targetMonthButtons"),
         monthSelectionStatus: document.getElementById("monthSelectionStatus"),
+        headerMonthLabel: document.getElementById("headerMonthLabel"),
         inspectionDate: document.getElementById("inspectionDate"),
         inspectionDateDisplay: document.getElementById("inspectionDateDisplay"),
         driverNameDisplay: document.getElementById("driverNameDisplay"),
@@ -1237,6 +1238,11 @@
         const confirmed = current.inspectionDateConfirmed
           && normalizeMonthKey(current.targetMonth)
           && monthKeyFromDateText(current.inspectionDate) === normalizeMonthKey(current.targetMonth);
+        const selectedMonth = parseMonthKey(current.targetMonth);
+        el.headerMonthLabel.hidden = !(currentScreen === FLOW_SCREENS.TRUCK && selectedMonth);
+        if (selectedMonth) {
+          el.headerMonthLabel.textContent = `${selectedMonth.month}月分`;
+        }
         el.inspectionDateDisplay.textContent = confirmed ? formatDateLabel(current.inspectionDate) : "未確定";
         el.inspectionDateDisplay.classList.toggle("placeholder", !confirmed);
         renderMonthSelection();

@@ -76,6 +76,20 @@
       backdrop-filter: blur(8px);
       box-shadow: var(--shadow);
     }
+    .header-month-label {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: var(--tap);
+      padding: 8px 14px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: color-mix(in srgb, var(--accent) 16%, var(--surface));
+      color: var(--text);
+      font-size: 1rem;
+      font-weight: 800;
+      white-space: nowrap;
+    }
     h1 { margin: 0; font-size: clamp(calc(2.25rem * var(--mobile-fit-scale)), calc(4.5vw * var(--mobile-fit-scale)), calc(2.7rem * var(--mobile-fit-scale))); }
     .sub { margin: 2px 0 0; color: var(--muted); font-size: .84rem; }
     .row { display: flex; gap: 8px; flex-wrap: wrap; }
