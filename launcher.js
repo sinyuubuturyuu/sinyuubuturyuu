@@ -27,6 +27,7 @@ const DAILY_INSPECTION_APP_SETTINGS = Object.freeze({
   useLocalFallbackWhenFirebaseIsMissing: true,
 });
 const DAILY_INSPECTION_STORAGE_NAMESPACE = "monthly_inspection_app_v1";
+const DAILY_INSPECTION_COMPLETION_MARKER_KEY = "monthly_inspection_completion_marker_v1";
 const DAILY_INSPECTION_MIN_SELECTABLE_MONTH = "2026-01";
 const DAILY_INSPECTION_FIREBASE_REQUIRED_KEYS = ["apiKey", "authDomain", "projectId", "appId"];
 const DAILY_INSPECTION_CHECK_SEQUENCE = ["", "レ", "×", "▲"];
@@ -820,6 +821,14 @@ function readDailyInspectionLocalStoreRecords(vehicle, driver) {
   }
 }
 
+function readDailyInspectionCompletionMarker() {
+  try {
+    return JSON.parse(localStorage.getItem(DAILY_INSPECTION_COMPLETION_MARKER_KEY) || "null");
+  } catch {
+    return null;
+  }
+}
+
 function hasDailyInspectionFirebaseConfig(firebaseConfig) {
   return DAILY_INSPECTION_FIREBASE_REQUIRED_KEYS.every((key) => {
     const value = firebaseConfig[key];
@@ -931,6 +940,16 @@ async function shouldShowDailyInspectionCompleteImage() {
   const driver = String(current.driverName || "").trim();
   if (!vehicle || !driver) {
     return false;
+  }
+
+  const marker = readDailyInspectionCompletionMarker();
+  if (
+    marker
+    && String(marker.date || "") === todayText()
+    && String(marker.vehicle || "").trim() === vehicle
+    && String(marker.driver || "").trim() === driver
+  ) {
+    return true;
   }
 
   const currentMonth = getCurrentYearMonth();

@@ -8,6 +8,7 @@ const CHECK_SEQUENCE = ["", "レ", "×", "▲"];
 const HOLIDAY_CHECK = "休";
 const WEEKDAYS = ["日", "月", "火", "水", "木", "金", "土"];
 const STORAGE_NAMESPACE = "monthly_inspection_app_v1";
+const COMPLETION_MARKER_KEY = "monthly_inspection_completion_marker_v1";
 const MIN_SELECTABLE_MONTH = "2026-01";
 const THEME_COLORS = Object.freeze({
   light: "#f3f5f8",
@@ -15,7 +16,7 @@ const THEME_COLORS = Object.freeze({
 });
 const FIREBASE_REQUIRED_KEYS = ["apiKey", "authDomain", "projectId", "appId"];
 const INSPECTION_GUIDE_MESSAGE = "空欄 → レ → × → ▲　未入力日のみ表示しています。休みの日は日付を押すとその日を休みとして色付けできます。もう一度押すと解除できます。上の送信ボタンで保存します。";
-const APP_VERSION = "20260312-3";
+const APP_VERSION = "20260312-4";
 const MONTHLY_COMPLETE_IMAGE_SRC = "./icons/monthly-complete.png";
 const MONTHLY_COMPLETE_IMAGE_ALT = "今月分はすべて完了しました。明日もよろしくお願いします。";
 const sharedSettings = window.SharedLauncherSettings || null;
@@ -271,6 +272,7 @@ async function submitSend() {
       delete state.draftsByMonth[month];
     }
     dropHolidayDraftDays(month, completeDays);
+    persistCompletionMarker(completeDays);
 
     await showSendFarewell();
     returnToLauncherHome();
@@ -931,6 +933,28 @@ function readLocalStore() {
     return JSON.parse(localStorage.getItem(STORAGE_NAMESPACE) || '{"records":{}}');
   } catch {
     return { records: {} };
+  }
+}
+
+function persistCompletionMarker(completeDays) {
+  const today = new Date();
+  const todayMonth = toYearMonth(today.getFullYear(), today.getMonth() + 1);
+  const todayDay = today.getDate();
+  const completedToday = Array.isArray(completeDays) && completeDays.some((day) => Number(day) === todayDay);
+
+  if (!completedToday || state.targetMonth !== todayMonth || !state.session) {
+    return;
+  }
+
+  try {
+    localStorage.setItem(COMPLETION_MARKER_KEY, JSON.stringify({
+      date: `${todayMonth}-${String(todayDay).padStart(2, "0")}`,
+      vehicle: state.session.vehicle || "",
+      driver: state.session.driver || "",
+      updatedAt: new Date().toISOString(),
+    }));
+  } catch {
+    // noop
   }
 }
 
