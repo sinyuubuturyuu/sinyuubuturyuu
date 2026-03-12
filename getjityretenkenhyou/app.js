@@ -114,7 +114,6 @@
         settingsScreen: document.getElementById("settingsScreen"),
         targetMonthButtons: document.getElementById("targetMonthButtons"),
         monthSelectionStatus: document.getElementById("monthSelectionStatus"),
-        headerMonthLabel: document.getElementById("headerMonthLabel"),
         inspectionDate: document.getElementById("inspectionDate"),
         inspectionDateDisplay: document.getElementById("inspectionDateDisplay"),
         driverNameDisplay: document.getElementById("driverNameDisplay"),
@@ -699,11 +698,20 @@
         monthSelectionLoading = true;
         renderAll();
 
+        let timeoutId = 0;
         try {
-          const result = await cloudSync.listSubmittedMonthsForPayload(
-            buildCloudPayload("lookup_months"),
-            { monthKeys: lookupMonths }
-          );
+          const timeoutPromise = new Promise((_, reject) => {
+            timeoutId = window.setTimeout(() => {
+              reject(new Error("month_lookup_timeout"));
+            }, 5000);
+          });
+          const result = await Promise.race([
+            cloudSync.listSubmittedMonthsForPayload(
+              buildCloudPayload("lookup_months"),
+              { monthKeys: lookupMonths }
+            ),
+            timeoutPromise
+          ]);
           if (token !== monthLookupToken) return;
 
           if (result && result.ok) {
@@ -720,6 +728,7 @@
           monthSelectionError = "送信済み月の確認に失敗したため、対象月をすべて表示しています。";
           availableMonthKeys = lookupMonths.slice();
         } finally {
+          window.clearTimeout(timeoutId);
           if (token !== monthLookupToken) return;
           monthSelectionLoading = false;
           if (clearMonthSelectionIfNeeded()) saveCurrent();
@@ -1228,8 +1237,6 @@
         const confirmed = current.inspectionDateConfirmed
           && normalizeMonthKey(current.targetMonth)
           && monthKeyFromDateText(current.inspectionDate) === normalizeMonthKey(current.targetMonth);
-        const selectedMonth = parseMonthKey(current.targetMonth);
-        el.headerMonthLabel.textContent = selectedMonth ? `${selectedMonth.month}月分` : "未選択";
         el.inspectionDateDisplay.textContent = confirmed ? formatDateLabel(current.inspectionDate) : "未確定";
         el.inspectionDateDisplay.classList.toggle("placeholder", !confirmed);
         renderMonthSelection();
