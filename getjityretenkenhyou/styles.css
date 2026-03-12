@@ -76,6 +76,20 @@
       backdrop-filter: blur(8px);
       box-shadow: var(--shadow);
     }
+    .header-month-label {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: var(--tap);
+      padding: 8px 14px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: color-mix(in srgb, var(--accent) 16%, var(--surface));
+      color: var(--text);
+      font-size: 1rem;
+      font-weight: 800;
+      white-space: nowrap;
+    }
     h1 { margin: 0; font-size: clamp(calc(2.25rem * var(--mobile-fit-scale)), calc(4.5vw * var(--mobile-fit-scale)), calc(2.7rem * var(--mobile-fit-scale))); }
     .sub { margin: 2px 0 0; color: var(--muted); font-size: .84rem; }
     .row { display: flex; gap: 8px; flex-wrap: wrap; }
@@ -169,13 +183,30 @@
     }
     .basic-meta {
       grid-template-areas:
+        "month month month"
         "date vehicle mode"
         "driver vehicle mode";
     }
+    .basic-meta .field-target-month { grid-area: month; }
     .basic-meta .field-date { grid-area: date; }
     .basic-meta .field-driver { grid-area: driver; }
     .basic-meta .field-vehicle { grid-area: vehicle; }
     .basic-meta .field-mode { grid-area: mode; }
+    .month-button-list {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
+      gap: 8px;
+    }
+    .month-button-list .btn {
+      width: 100%;
+    }
+    .month-selection-status {
+      margin: 0;
+      font-size: .92rem;
+      line-height: 1.4;
+      color: var(--muted);
+      font-weight: 700;
+    }
     .field { display: grid; gap: 6px; }
     .field label { font-size: .84rem; color: var(--muted); font-weight: 700; }
     #basicScreen .basic-meta .field label { font-size: calc(1.68rem * var(--mobile-fit-scale)); }
@@ -212,6 +243,9 @@
     #basicScreen .basic-meta #inspectionDate,
     #basicScreen .basic-meta .basic-value {
       font-size: calc(2rem * var(--mobile-fit-scale));
+    }
+    #basicScreen .basic-meta #inspectionDate {
+      display: none;
     }
     #basicScreen .basic-meta .basic-value {
       min-height: var(--tap);
@@ -716,6 +750,7 @@
       .meta { grid-template-columns: 1fr; }
       .basic-meta { grid-template-areas: none; }
       .basic-meta .field-date,
+      .basic-meta .field-target-month,
       .basic-meta .field-driver,
       .basic-meta .field-vehicle,
       .basic-meta .field-mode { grid-area: auto; }

@@ -21,6 +21,7 @@
         <h1>月次タイヤ点検表</h1>
       </div>
       <div class="row">
+        <span id="headerMonthLabel" class="header-month-label">未選択</span>
       </div>
     </header>
 
@@ -29,9 +30,15 @@
         <div class="panel-head">基本情報</div>
         <div class="panel-body">
           <div class="meta basic-meta">
+            <div class="field field-target-month">
+              <label>対象月</label>
+              <div id="targetMonthButtons" class="month-button-list" aria-label="対象月一覧"></div>
+              <p id="monthSelectionStatus" class="month-selection-status">対象月を読み込み中です。</p>
+            </div>
             <div class="field field-date">
-              <label for="inspectionDate">点検日</label>
-              <input id="inspectionDate" type="date">
+              <label>点検日</label>
+              <div id="inspectionDateDisplay" class="basic-value placeholder">未確定</div>
+              <input id="inspectionDate" type="hidden">
             </div>
             <div class="field field-driver">
               <label>乗務員</label>

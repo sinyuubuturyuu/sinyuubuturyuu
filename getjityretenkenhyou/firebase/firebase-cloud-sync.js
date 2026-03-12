@@ -241,7 +241,9 @@
 
   function buildBasicSignature(entry) {
     const basic = extractBasicInfo(entry);
-    const raw = [basic.inspectionDate, basic.driverName, basic.vehicleNumber, basic.truckType].join("|");
+    // The document id already includes inspectionMonth, so keeping the day here
+    // prevents same-month resubmits from overwriting the intended monthly record.
+    const raw = [basic.driverName, basic.vehicleNumber, basic.truckType].join("|");
     return hashText(raw);
   }
 
@@ -703,6 +705,86 @@
     }
   }
 
+  async function listSubmittedMonthsForPayload(payload, options) {
+    const ready = await ensureFirebaseReady();
+    if (!ready || !state.db) {
+      return { ok: false, reason: "firebase_unready", months: [] };
+    }
+    if (!payload || typeof payload !== "object") {
+      return { ok: false, reason: "invalid_payload", months: [] };
+    }
+
+    const requestedMonths = Array.isArray(options && options.monthKeys)
+      ? options.monthKeys
+        .map((value) => String(value || "").trim())
+        .filter((value, index, rows) => /^\d{4}-\d{2}$/.test(value) && rows.indexOf(value) === index)
+      : [];
+    if (!requestedMonths.length) {
+      return { ok: true, reason: "ok", months: [] };
+    }
+
+    const entry = {
+      source: "lookup_months",
+      clientUpdatedAt: new Date().toISOString(),
+      payload: deepClone(payload)
+    };
+    const docInfo = getDocInfoForEntry(entry);
+    const companyCode = String(state.options && state.options.companyCode ? state.options.companyCode : "").trim();
+    const targetBasic = {
+      driverName: normalizeText(docInfo && docInfo.basicInfo ? docInfo.basicInfo.driverName : ""),
+      vehicleNumber: normalizeText(docInfo && docInfo.basicInfo ? docInfo.basicInfo.vehicleNumber : ""),
+      truckType: normalizeText(docInfo && docInfo.basicInfo ? docInfo.basicInfo.truckType : "")
+    };
+
+    const hasState = (row) => Boolean(row && row.state && typeof row.state === "object");
+    const sameCompany = (row) => !companyCode || String(row && row.companyCode ? row.companyCode : "").trim() === companyCode;
+    const basicInfoOf = (row) => {
+      const basicInfo = row && row.basicInfo && typeof row.basicInfo === "object" ? row.basicInfo : {};
+      const current = row && row.state && row.state.current && typeof row.state.current === "object" ? row.state.current : {};
+      return {
+        driverName: normalizeText(basicInfo.driverName || current.driverName),
+        vehicleNumber: normalizeText(basicInfo.vehicleNumber || current.vehicleNumber),
+        truckType: normalizeText(basicInfo.truckType || current.truckType)
+      };
+    };
+    const sameLookupTarget = (row) => {
+      const basic = basicInfoOf(row);
+      return basic.driverName === targetBasic.driverName
+        && basic.vehicleNumber === targetBasic.vehicleNumber
+        && basic.truckType === targetBasic.truckType;
+    };
+
+    try {
+      const submitted = new Set();
+      for (let index = 0; index < requestedMonths.length; index += 10) {
+        const chunk = requestedMonths.slice(index, index + 10);
+        let query = state.db.collection(state.options.collection);
+        query = chunk.length === 1
+          ? query.where("inspectionMonth", "==", chunk[0])
+          : query.where("inspectionMonth", "in", chunk);
+        const snap = await query.limit(240).get();
+        if (!snap || snap.empty) continue;
+        snap.forEach((doc) => {
+          const row = doc.data() || {};
+          if (!hasState(row) || !sameCompany(row) || !sameLookupTarget(row)) return;
+          const inspectionMonth = String(row && row.inspectionMonth ? row.inspectionMonth : "").trim();
+          if (requestedMonths.includes(inspectionMonth)) {
+            submitted.add(inspectionMonth);
+          }
+        });
+      }
+
+      return {
+        ok: true,
+        reason: "ok",
+        months: requestedMonths.filter((monthKey) => submitted.has(monthKey))
+      };
+    } catch (error) {
+      warn("Submitted months lookup failed", error);
+      return { ok: false, reason: toFirestoreReason(error, "read_failed"), months: [] };
+    }
+  }
+
   async function flushPending() {
     if (state.flushing) return;
     state.flushing = true;
@@ -817,6 +899,7 @@
     deleteSettingsBackup,
     loadLatestState,
     loadStateForPayload,
+    listSubmittedMonthsForPayload,
     clearPendingQueue: () => setPendingQueue([]),
     previewDocInfo: () => {
       if (typeof state.getPayload !== "function") return null;

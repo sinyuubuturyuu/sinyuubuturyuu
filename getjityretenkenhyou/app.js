@@ -112,7 +112,11 @@
         truckScreen: document.getElementById("truckScreen"),
         exportScreen: document.getElementById("exportScreen"),
         settingsScreen: document.getElementById("settingsScreen"),
+        targetMonthButtons: document.getElementById("targetMonthButtons"),
+        monthSelectionStatus: document.getElementById("monthSelectionStatus"),
+        headerMonthLabel: document.getElementById("headerMonthLabel"),
         inspectionDate: document.getElementById("inspectionDate"),
+        inspectionDateDisplay: document.getElementById("inspectionDateDisplay"),
         driverNameDisplay: document.getElementById("driverNameDisplay"),
         vehicleNumberDisplay: document.getElementById("vehicleNumberDisplay"),
         truckTypeDisplay: document.getElementById("truckTypeDisplay"),
@@ -171,6 +175,79 @@
         const day = String(d.getDate()).padStart(2, "0");
         return `${y}-${m}-${day}`;
       };
+      const currentMonthKey = (date = new Date()) => {
+        const y = date.getFullYear();
+        const m = String(date.getMonth() + 1).padStart(2, "0");
+        return `${y}-${m}`;
+      };
+      const normalizeMonthKey = (value) => {
+        const match = /^(\d{4})-(\d{2})$/.exec(String(value || "").trim());
+        if (!match) return "";
+        const year = Number(match[1]);
+        const month = Number(match[2]);
+        if (!Number.isFinite(year) || !Number.isFinite(month) || month < 1 || month > 12) return "";
+        return `${year}-${String(month).padStart(2, "0")}`;
+      };
+      const parseMonthKey = (value) => {
+        const normalized = normalizeMonthKey(value);
+        if (!normalized) return null;
+        const [yearText, monthText] = normalized.split("-");
+        return { year: Number(yearText), month: Number(monthText) };
+      };
+      const buildDateText = (year, month, day) => `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+      const getDaysInMonth = (year, month) => new Date(year, month, 0).getDate();
+      const formatDateLabel = (value) => {
+        const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(value || "").trim());
+        if (!match) return "未確定";
+        return `${Number(match[1])}年${Number(match[2])}月${Number(match[3])}日`;
+      };
+      const formatMonthLabel = (value) => {
+        const normalized = normalizeMonthKey(value);
+        if (!normalized) return "未選択";
+        if (normalized === currentMonthKey()) return "今月分";
+        const parsed = parseMonthKey(normalized);
+        return parsed ? `${parsed.year}年${parsed.month}月分` : "未選択";
+      };
+      const buildSelectableMonthKeys = (date = new Date()) => {
+        const keys = [];
+        const year = date.getFullYear();
+        const month = date.getMonth() + 1;
+        for (let currentMonth = month; currentMonth >= 1; currentMonth -= 1) {
+          keys.push(normalizeMonthKey(`${year}-${String(currentMonth).padStart(2, "0")}`));
+        }
+        const previousYearMonthCount = Math.max(0, 4 - month);
+        for (let offset = 0; offset < previousYearMonthCount; offset += 1) {
+          keys.push(normalizeMonthKey(`${year - 1}-${String(12 - offset).padStart(2, "0")}`));
+        }
+        return keys.filter(Boolean);
+      };
+      const defaultInspectionDateForMonth = (monthKey) => {
+        const parsed = parseMonthKey(monthKey);
+        if (!parsed) return today();
+        return buildDateText(parsed.year, parsed.month, getDaysInMonth(parsed.year, parsed.month));
+      };
+      const getAvailableDayNumbers = (monthKey) => {
+        const parsed = parseMonthKey(monthKey);
+        if (!parsed) return [];
+        const isCurrentMonth = monthKey === currentMonthKey();
+        const maxDay = isCurrentMonth ? new Date().getDate() : getDaysInMonth(parsed.year, parsed.month);
+        return Array.from({ length: maxDay }, (_, index) => index + 1);
+      };
+      const normalizeInspectionDateForMonth = (value, monthKey) => {
+        const parsed = parseMonthKey(monthKey);
+        if (!parsed) return today();
+        const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(value || "").trim());
+        const availableDays = getAvailableDayNumbers(monthKey);
+        const fallbackDay = availableDays.length ? availableDays[availableDays.length - 1] : 1;
+        if (!match) return buildDateText(parsed.year, parsed.month, fallbackDay);
+        const year = Number(match[1]);
+        const month = Number(match[2]);
+        const day = Number(match[3]);
+        if (year !== parsed.year || month !== parsed.month || !availableDays.includes(day)) {
+          return buildDateText(parsed.year, parsed.month, fallbackDay);
+        }
+        return buildDateText(parsed.year, parsed.month, day);
+      };
       const formatDateTimeMinute = (value) => {
         const d = new Date(value);
         if (Number.isNaN(d.getTime())) return "";
@@ -225,7 +302,9 @@
       const defaultCurrent = () => ({
         tireNumberingVersion: TIRE_NUMBERING_VERSION,
         truckType: TRUCK_TYPES.LOW12,
+        targetMonth: currentMonthKey(),
         inspectionDate: today(),
+        inspectionDateConfirmed: false,
         driverName: "",
         vehicleNumber: "",
         reportNote: "",
@@ -266,6 +345,13 @@
           curr.tires = migrateTiresByMap(curr.tires, FOURTON6_OLD_TO_NEW_ID_MAP);
         }
         curr.tireNumberingVersion = TIRE_NUMBERING_VERSION;
+        curr.targetMonth = normalizeMonthKey(obj && obj.targetMonth) || monthKeyFromDateText(obj && obj.inspectionDate) || currentMonthKey();
+        curr.inspectionDate = normalizeInspectionDateForMonth(curr.inspectionDate, curr.targetMonth);
+        if (typeof (obj && obj.inspectionDateConfirmed) === "boolean") {
+          curr.inspectionDateConfirmed = obj.inspectionDateConfirmed;
+        } else {
+          curr.inspectionDateConfirmed = Boolean(obj && obj.inspectionDate);
+        }
         curr.driverName = typeof curr.driverName === "string" ? curr.driverName : "";
         curr.reportNote = typeof curr.reportNote === "string" ? curr.reportNote : "";
         if (!curr.inspectionDate) curr.inspectionDate = today();
@@ -407,6 +493,11 @@
       let latestCommitFetchedAtMs = 0;
       let latestCommitFetchPromise = null;
       let previousLookupToken = 0;
+      let monthLookupToken = 0;
+      let availableMonthKeys = buildSelectableMonthKeys();
+      let submittedMonthKeys = [];
+      let monthSelectionLoading = false;
+      let monthSelectionError = "";
       let tireButtons = {};
       let dialog = { target: null, fields: [], step: 0 };
       let currentScreen = FLOW_SCREENS.BASIC;
@@ -501,6 +592,140 @@
       };
 
       const text = (v) => v || "未入力";
+
+      function hasBasicSelectionTarget() {
+        return Boolean(
+          String(current.driverName || "").trim()
+          && String(current.vehicleNumber || "").trim()
+          && String(current.truckType || "").trim()
+          && truckTypes.includes(current.truckType)
+        );
+      }
+
+      function clearMonthSelectionIfNeeded() {
+        const normalizedTargetMonth = normalizeMonthKey(current.targetMonth);
+        if (!normalizedTargetMonth) {
+          if (current.targetMonth || current.inspectionDateConfirmed) {
+            current.targetMonth = "";
+            current.inspectionDateConfirmed = false;
+            return true;
+          }
+          return false;
+        }
+        if (availableMonthKeys.includes(normalizedTargetMonth)) return false;
+        current.targetMonth = "";
+        current.inspectionDateConfirmed = false;
+        return true;
+      }
+
+      function renderMonthSelection() {
+        const selectedMonth = normalizeMonthKey(current.targetMonth);
+        const confirmed = current.inspectionDateConfirmed
+          && normalizeMonthKey(current.targetMonth)
+          && monthKeyFromDateText(current.inspectionDate) === normalizeMonthKey(current.targetMonth);
+
+        el.targetMonthButtons.innerHTML = "";
+        if (!hasBasicSelectionTarget()) {
+          el.monthSelectionStatus.textContent = "乗務員・車両番号・車種を設定すると対象月を選べます。";
+          return;
+        }
+
+        if (monthSelectionLoading) {
+          el.monthSelectionStatus.textContent = "送信済み月を確認中です。";
+          return;
+        }
+
+        availableMonthKeys.forEach((monthKey) => {
+          const button = document.createElement("button");
+          button.type = "button";
+          button.className = `btn${selectedMonth === monthKey ? " primary" : ""}`;
+          button.textContent = formatMonthLabel(monthKey);
+          button.dataset.monthKey = monthKey;
+          button.setAttribute("aria-pressed", selectedMonth === monthKey ? "true" : "false");
+          el.targetMonthButtons.appendChild(button);
+        });
+        if (monthSelectionError) {
+          el.monthSelectionStatus.textContent = monthSelectionError;
+          return;
+        }
+        if (!availableMonthKeys.length) {
+          el.monthSelectionStatus.textContent = "表示対象の未入力月はありません。";
+          return;
+        }
+        if (confirmed) {
+          el.monthSelectionStatus.textContent = `${formatMonthLabel(current.targetMonth)} / 点検日: ${formatDateLabel(current.inspectionDate)}`;
+          return;
+        }
+        if (selectedMonth) {
+          el.monthSelectionStatus.textContent = `${formatMonthLabel(selectedMonth)} / 点検日: ${formatDateLabel(current.inspectionDate)}`;
+          return;
+        }
+        el.monthSelectionStatus.textContent = "対象月を選択してください。";
+      }
+
+      function openMonthConfirmDialog(monthKey) {
+        const normalizedMonth = normalizeMonthKey(monthKey);
+        if (!normalizedMonth) return;
+        current.targetMonth = normalizedMonth;
+        current.inspectionDate = normalizeInspectionDateForMonth(defaultInspectionDateForMonth(normalizedMonth), normalizedMonth);
+        current.inspectionDateConfirmed = true;
+        saveCurrent();
+        renderAll();
+        void refreshPreviousFromCloud();
+      }
+
+      async function refreshAvailableMonths() {
+        const lookupMonths = buildSelectableMonthKeys();
+        availableMonthKeys = lookupMonths.slice();
+        submittedMonthKeys = [];
+        monthSelectionError = "";
+
+        if (!hasBasicSelectionTarget()) {
+          monthSelectionLoading = false;
+          if (clearMonthSelectionIfNeeded()) saveCurrent();
+          renderAll();
+          return;
+        }
+
+        const cloudSync = window.FirebaseCloudSync;
+        if (!cloudSync || typeof cloudSync.listSubmittedMonthsForPayload !== "function") {
+          monthSelectionLoading = false;
+          if (clearMonthSelectionIfNeeded()) saveCurrent();
+          renderAll();
+          return;
+        }
+
+        const token = ++monthLookupToken;
+        monthSelectionLoading = true;
+        renderAll();
+
+        try {
+          const result = await cloudSync.listSubmittedMonthsForPayload(
+            buildCloudPayload("lookup_months"),
+            { monthKeys: lookupMonths }
+          );
+          if (token !== monthLookupToken) return;
+
+          if (result && result.ok) {
+            submittedMonthKeys = Array.isArray(result.months) ? result.months.slice() : [];
+            const submittedSet = new Set(submittedMonthKeys);
+            availableMonthKeys = lookupMonths.filter((monthKey) => !submittedSet.has(monthKey));
+          } else {
+            monthSelectionError = "送信済み月の確認に失敗したため、対象月をすべて表示しています。";
+            availableMonthKeys = lookupMonths.slice();
+          }
+        } catch (error) {
+          if (token !== monthLookupToken) return;
+          console.warn("Failed to load available months:", error);
+          monthSelectionError = "送信済み月の確認に失敗したため、対象月をすべて表示しています。";
+          availableMonthKeys = lookupMonths.slice();
+        } finally {
+          if (token !== monthLookupToken) return;
+          monthSelectionLoading = false;
+          if (clearMonthSelectionIfNeeded()) saveCurrent();
+          renderAll();
+        }
+      }
 
       function renderScreens() {
         const basic = currentScreen === FLOW_SCREENS.BASIC;
@@ -1000,6 +1225,14 @@
 
       function renderMeta() {
         el.inspectionDate.value = current.inspectionDate;
+        const confirmed = current.inspectionDateConfirmed
+          && normalizeMonthKey(current.targetMonth)
+          && monthKeyFromDateText(current.inspectionDate) === normalizeMonthKey(current.targetMonth);
+        const selectedMonth = parseMonthKey(current.targetMonth);
+        el.headerMonthLabel.textContent = selectedMonth ? `${selectedMonth.month}月分` : "未選択";
+        el.inspectionDateDisplay.textContent = confirmed ? formatDateLabel(current.inspectionDate) : "未確定";
+        el.inspectionDateDisplay.classList.toggle("placeholder", !confirmed);
+        renderMonthSelection();
         renderBasicInfoDisplay();
       }
 
@@ -1074,7 +1307,10 @@
       }
 
       function isBasicInfoReady() {
+        if (!normalizeMonthKey(current.targetMonth)) return false;
         if (!current.inspectionDate) return false;
+        if (!current.inspectionDateConfirmed) return false;
+        if (monthKeyFromDateText(current.inspectionDate) !== normalizeMonthKey(current.targetMonth)) return false;
         if (!current.driverName) return false;
         if (!current.vehicleNumber) return false;
         if (!current.truckType || !truckTypes.includes(current.truckType)) return false;
@@ -1578,6 +1814,7 @@
         current.driverName = next;
         saveCurrent();
         renderAll();
+        void refreshAvailableMonths();
         void refreshPreviousFromCloud();
       }
 
@@ -1588,6 +1825,7 @@
         current.vehicleNumber = next;
         saveCurrent();
         renderAll();
+        void refreshAvailableMonths();
         void refreshPreviousFromCloud();
       }
 
@@ -1602,6 +1840,7 @@
         closeDialog();
         buildTires();
         renderAll();
+        void refreshAvailableMonths();
         void refreshPreviousFromCloud();
       }
 
@@ -1623,6 +1862,7 @@
         if (!current.vehicleNumber) {
           current.vehicleNumber = value;
           saveCurrent();
+          void refreshAvailableMonths();
           void refreshPreviousFromCloud();
         }
 
@@ -1642,6 +1882,7 @@
         if (current.vehicleNumber === value) {
           current.vehicleNumber = vehicles[0] || "";
           saveCurrent();
+          void refreshAvailableMonths();
           void refreshPreviousFromCloud();
         }
 
@@ -1687,6 +1928,7 @@
         if (!current.driverName) {
           current.driverName = driverName;
           saveCurrent();
+          void refreshAvailableMonths();
           void refreshPreviousFromCloud();
         }
 
@@ -1712,6 +1954,7 @@
         if (current.driverName === targetName) {
           current.driverName = firstDriverName();
           saveCurrent();
+          void refreshAvailableMonths();
           void refreshPreviousFromCloud();
         }
 
@@ -1763,6 +2006,7 @@
           saveCurrent();
           closeDialog();
           buildTires();
+          void refreshAvailableMonths();
           void refreshPreviousFromCloud();
         }
 
@@ -1815,12 +2059,23 @@
       }
 
       function bindEvents() {
-        el.inspectionDate.addEventListener("change", (ev) => {
-          if (!ev.target.value) return;
-          current.inspectionDate = ev.target.value;
-          saveCurrent();
-          renderAll();
-          void refreshPreviousFromCloud();
+        el.targetMonthButtons.addEventListener("click", (ev) => {
+          const target = ev.target;
+          if (!(target instanceof HTMLButtonElement)) return;
+          const monthKey = normalizeMonthKey(target.dataset.monthKey);
+          if (!monthKey) return;
+          openMonthConfirmDialog(monthKey);
+        });
+        el.basicNextBtn.addEventListener("click", (ev) => {
+          if (isBasicInfoReady()) return;
+          ev.preventDefault();
+          ev.stopImmediatePropagation();
+          const selectedMonth = normalizeMonthKey(current.targetMonth);
+          if (!selectedMonth) {
+            showToast("対象月を選択してから点検を開始してください");
+            return;
+          }
+          showToast("基本情報を確認してください");
         });
         el.basicNextBtn.addEventListener("click", () => {
           if (!isBasicInfoReady()) {
@@ -1975,6 +2230,7 @@
             await window.FirebaseCloudSync.init({
               getPayload: () => buildCloudPayload("autosave")
             });
+            await refreshAvailableMonths();
             await refreshPreviousFromCloud();
           })();
         }
@@ -1986,11 +2242,14 @@
         if (!current.driverName && drivers.length > 0) current.driverName = firstDriverName();
         if (!current.vehicleNumber && vehicles.length > 0) current.vehicleNumber = vehicles[0];
         if (!truckTypes.includes(current.truckType)) current.truckType = truckTypes[0] || TRUCK_TYPES.LOW12;
+        current.targetMonth = normalizeMonthKey(current.targetMonth) || monthKeyFromDateText(current.inspectionDate) || currentMonthKey();
+        current.inspectionDate = normalizeInspectionDateForMonth(current.inspectionDate, current.targetMonth);
         currentScreen = FLOW_SCREENS.BASIC;
         buildTires();
         bindEvents();
         saveCurrent();
         renderAll();
+        void refreshAvailableMonths();
         void refreshPreviousFromCloud();
         registerSW();
       }
