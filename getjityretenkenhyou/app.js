@@ -15,7 +15,7 @@
       });
       const SETTINGS_BACKUP_SLOT = 1;
       const LAST_COMMIT_PUSHED_AT = "2026-03-01 21:33";
-      const GITHUB_REPO_API_LATEST_COMMIT = "https://api.github.com/repos/sinyuubuturyuu/getujityretenkenhyou/commits?sha=main&per_page=1";
+      const GITHUB_REPO_API_LATEST_COMMIT = "https://api.github.com/repos/sinyuubuturyuu/sinyuubuturyuu/commits?sha=main&per_page=1";
 
       const TRUCK_TYPES = {
         LOW12: "low12",
@@ -1724,7 +1724,11 @@
         latestCommitFetchPromise = (async () => {
           try {
             const response = await fetch(url, { cache: "no-store" });
-            if (!response.ok) throw new Error(`GitHub API error: ${response.status}`);
+            if (!response.ok) {
+              const error = new Error(`GitHub API error: ${response.status}`);
+              error.status = response.status;
+              throw error;
+            }
             const data = await response.json();
             const latest = Array.isArray(data) ? data[0] : data;
             const iso = latest && latest.commit && latest.commit.committer && latest.commit.committer.date
@@ -1734,7 +1738,11 @@
             if (formatted) latestCommitPushedAt = formatted;
             latestCommitFetchedAtMs = Date.now();
           } catch (e) {
-            console.warn("Failed to fetch latest commit pushed time:", e);
+            latestCommitFetchedAtMs = Date.now();
+            const status = Number(e && e.status);
+            if (status !== 403 && status !== 429) {
+              console.warn("Failed to fetch latest commit pushed time:", e);
+            }
           } finally {
             latestCommitFetchPromise = null;
             renderSettings();
@@ -2250,7 +2258,6 @@
         cleanupLegacyExportDirectoryStorage();
         initTheme();
         bindMobileFitScale();
-        void refreshLatestCommitPushedAt({ force: true });
         if (!current.inspectionDate) current.inspectionDate = today();
         if (!current.driverName && drivers.length > 0) current.driverName = firstDriverName();
         if (!current.vehicleNumber && vehicles.length > 0) current.vehicleNumber = vehicles[0];
