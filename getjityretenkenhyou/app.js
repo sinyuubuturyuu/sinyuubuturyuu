@@ -15,6 +15,8 @@
       });
       const SETTINGS_BACKUP_SLOT = 1;
       const LAST_COMMIT_PUSHED_AT = "2026-03-01 21:33";
+      const MONTHLY_COMPLETE_IMAGE_SRC = "icons/monthly-complete.png";
+      const MONTHLY_COMPLETE_IMAGE_ALT = "今月分はすべて入力済みです。来月もよろしくお願いします。";
       const GITHUB_REPO_API_LATEST_COMMIT = "https://api.github.com/repos/sinyuubuturyuu/sinyuubuturyuu/commits?sha=main&per_page=1";
 
       const TRUCK_TYPES = {
@@ -498,6 +500,7 @@
       let submittedMonthKeys = [];
       let monthSelectionLoading = false;
       let monthSelectionError = "";
+      let monthlyCompleteFlowRunning = false;
       let tireButtons = {};
       let dialog = { target: null, fields: [], step: 0 };
       let currentScreen = FLOW_SCREENS.BASIC;
@@ -734,6 +737,9 @@
           monthSelectionLoading = false;
           if (clearMonthSelectionIfNeeded()) saveCurrent();
           renderAll();
+          if (!monthSelectionError && hasBasicSelectionTarget() && availableMonthKeys.length === 0) {
+            void showMonthlyCompleteAndReturnHome();
+          }
         }
       }
 
@@ -1571,12 +1577,16 @@
         window.location.replace("../index.html");
       }
 
-      async function showSendFarewell() {
+      async function showSendFarewell(options = {}) {
         if (!el.sendFarewell) return;
         el.sendFarewell.classList.add("show");
         el.sendFarewell.setAttribute("aria-hidden", "false");
 
         const image = el.sendFarewellImage;
+        if (image) {
+          if (options.src) image.src = options.src;
+          if (options.alt) image.alt = options.alt;
+        }
         if (image && !image.complete) {
           await new Promise((resolve) => {
             let done = false;
@@ -1593,6 +1603,20 @@
           });
         }
         await new Promise((resolve) => setTimeout(resolve, 1800));
+      }
+
+      async function showMonthlyCompleteAndReturnHome() {
+        if (monthlyCompleteFlowRunning) return;
+        monthlyCompleteFlowRunning = true;
+        try {
+          await showSendFarewell({
+            src: MONTHLY_COMPLETE_IMAGE_SRC,
+            alt: MONTHLY_COMPLETE_IMAGE_ALT
+          });
+          returnToLauncherHome();
+        } finally {
+          monthlyCompleteFlowRunning = false;
+        }
       }
 
       async function removedShutdownApp() {

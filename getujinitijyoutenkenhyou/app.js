@@ -15,7 +15,9 @@ const THEME_COLORS = Object.freeze({
 });
 const FIREBASE_REQUIRED_KEYS = ["apiKey", "authDomain", "projectId", "appId"];
 const INSPECTION_GUIDE_MESSAGE = "空欄 → レ → × → ▲　未入力日のみ表示しています。休みの日は日付を押すとその日を休みとして色付けできます。もう一度押すと解除できます。上の送信ボタンで保存します。";
-const APP_VERSION = "20260308-7";
+const APP_VERSION = "20260312-3";
+const MONTHLY_COMPLETE_IMAGE_SRC = "./icons/monthly-complete.png";
+const MONTHLY_COMPLETE_IMAGE_ALT = "今月分はすべて完了しました。明日もよろしくお願いします。";
 const sharedSettings = window.SharedLauncherSettings || null;
 
 const INSPECTION_GROUPS = [
@@ -138,7 +140,8 @@ const state = {
   pendingDays: [],
   draftsByMonth: {},
   holidayDraftByMonth: {},
-  store: null
+  store: null,
+  monthlyCompleteFlowRunning: false
 };
 
 elements.startButton.disabled = true;
@@ -698,6 +701,32 @@ async function showSendFarewell() {
   }
 
   await new Promise((resolve) => setTimeout(resolve, 1800));
+}
+
+async function showMonthlyCompleteAndReturnHome() {
+  if (state.monthlyCompleteFlowRunning) {
+    return;
+  }
+
+  state.monthlyCompleteFlowRunning = true;
+  const image = elements.sendFarewellImage;
+  const previousSrc = image ? image.getAttribute("src") || "" : "";
+  const previousAlt = image ? image.getAttribute("alt") || "" : "";
+
+  try {
+    if (image) {
+      image.src = MONTHLY_COMPLETE_IMAGE_SRC;
+      image.alt = MONTHLY_COMPLETE_IMAGE_ALT;
+    }
+    await showSendFarewell();
+    returnToLauncherHome();
+  } finally {
+    if (image) {
+      image.src = previousSrc;
+      image.alt = previousAlt;
+    }
+    state.monthlyCompleteFlowRunning = false;
+  }
 }
 
 function returnToLauncherHome() {

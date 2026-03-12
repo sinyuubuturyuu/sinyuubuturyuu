@@ -10,6 +10,51 @@ const SETTINGS_BACKUP_KIND = Object.freeze({
 });
 
 const SETTINGS_BACKUP_SLOT = 1;
+const MONTHLY_COMPLETE_IMAGE_SRC = "./getjityretenkenhyou/icons/monthly-complete.png";
+const MONTHLY_COMPLETE_IMAGE_ALT = "Monthly inspection complete.";
+const DAILY_INSPECTION_COMPLETE_IMAGE_SRC = "./getujinitijyoutenkenhyou/icons/monthly-complete.png";
+const DAILY_INSPECTION_COMPLETE_IMAGE_ALT = "Daily inspection complete for this month.";
+const DAILY_INSPECTION_FIREBASE_CONFIG = Object.freeze({
+  apiKey: "AIzaSyA5_YI9ONMCkjX-MTGiKSwvYeAYmJWeGmQ",
+  authDomain: "getujinitijyoutenkenhyou.firebaseapp.com",
+  projectId: "getujinitijyoutenkenhyou",
+  storageBucket: "getujinitijyoutenkenhyou.firebasestorage.app",
+  messagingSenderId: "683991833697",
+  appId: "1:683991833697:web:a7e0e3b3a85993e7729e20",
+});
+const DAILY_INSPECTION_APP_SETTINGS = Object.freeze({
+  collectionName: "monthlyInspectionEntries",
+  useLocalFallbackWhenFirebaseIsMissing: true,
+});
+const DAILY_INSPECTION_STORAGE_NAMESPACE = "monthly_inspection_app_v1";
+const DAILY_INSPECTION_MIN_SELECTABLE_MONTH = "2026-01";
+const DAILY_INSPECTION_FIREBASE_REQUIRED_KEYS = ["apiKey", "authDomain", "projectId", "appId"];
+const DAILY_INSPECTION_CHECK_SEQUENCE = ["", "レ", "×", "▲"];
+const DAILY_INSPECTION_HOLIDAY_CHECK = "休";
+const DAILY_INSPECTION_ITEM_IDS = Object.freeze([
+  "brake_pedal",
+  "brake_fluid",
+  "air_pressure",
+  "exhaust_sound",
+  "parking_brake",
+  "tire_pressure",
+  "tire_damage",
+  "tire_tread",
+  "wheel_nut",
+  "battery_fluid",
+  "coolant",
+  "fan_belt",
+  "engine_oil",
+  "engine_start",
+  "engine_response",
+  "lights_status",
+  "washer_fluid",
+  "wiper_status",
+  "air_tank_water",
+  "documents",
+  "emergency_tools",
+  "report_changes",
+]);
 const sharedSettings = window.SharedLauncherSettings;
 
 const elements = {
@@ -40,6 +85,8 @@ const elements = {
   addTruckTypeBtn: document.getElementById("addTruckTypeBtn"),
   truckTypeList: document.getElementById("truckTypeList"),
   settingsStatus: document.getElementById("settingsStatus"),
+  sendFarewell: document.getElementById("sendFarewell"),
+  sendFarewellImage: document.getElementById("sendFarewellImage"),
 };
 
 const state = {
@@ -51,6 +98,8 @@ const state = {
   cloudReady: false,
   backupLoading: false,
   backupWorking: false,
+  monthlyLaunchBusy: false,
+  dailyLaunchBusy: false,
 };
 
 renderAll();
@@ -233,8 +282,12 @@ function renderBackupControls() {
 }
 
 function bindEvents() {
-  elements.app1Button.addEventListener("click", () => openApp(APP_CONFIG.app1Path));
-  elements.app2Button.addEventListener("click", () => openApp(APP_CONFIG.app2Path));
+  elements.app1Button.addEventListener("click", () => {
+    void openMonthlyApp();
+  });
+  elements.app2Button.addEventListener("click", () => {
+    void openDailyInspectionApp();
+  });
 
   elements.settingsButton.addEventListener("click", () => {
     clearStatus();
@@ -484,6 +537,445 @@ function buildCloudPayload() {
       truckType: current.truckType || sharedSettings.TRUCK_TYPES.LOW12,
     },
   };
+}
+
+function buildSelectableMonthKeys(date = new Date()) {
+  const keys = [];
+  const year = date.getFullYear();
+  const month = date.getMonth() + 1;
+
+  for (let currentMonth = month; currentMonth >= 1; currentMonth -= 1) {
+    keys.push(`${year}-${String(currentMonth).padStart(2, "0")}`);
+  }
+
+  const previousYearMonthCount = Math.max(0, 4 - month);
+  for (let offset = 0; offset < previousYearMonthCount; offset += 1) {
+    keys.push(`${year - 1}-${String(12 - offset).padStart(2, "0")}`);
+  }
+
+  return keys;
+}
+
+function hasMonthlySelectionTarget() {
+  const current = state.shared.current || {};
+  return Boolean(
+    String(current.driverName || "").trim()
+    && String(current.vehicleNumber || "").trim()
+    && String(current.truckType || "").trim()
+    && state.shared.truckTypes.includes(current.truckType)
+  );
+}
+
+function hideSendFarewell() {
+  if (!elements.sendFarewell) {
+    return;
+  }
+
+  elements.sendFarewell.classList.remove("show");
+  elements.sendFarewell.setAttribute("aria-hidden", "true");
+}
+
+async function showSendFarewell(options = {}) {
+  if (!elements.sendFarewell) {
+    return;
+  }
+
+  const image = elements.sendFarewellImage;
+  if (image) {
+    if (options.src) image.src = options.src;
+    if (options.alt) image.alt = options.alt;
+  }
+
+  elements.sendFarewell.classList.add("show");
+  elements.sendFarewell.setAttribute("aria-hidden", "false");
+
+  if (image && !image.complete) {
+    await new Promise((resolve) => {
+      let done = false;
+      const finish = () => {
+        if (done) {
+          return;
+        }
+        done = true;
+        image.removeEventListener("load", finish);
+        image.removeEventListener("error", finish);
+        resolve();
+      };
+
+      image.addEventListener("load", finish, { once: true });
+      image.addEventListener("error", finish, { once: true });
+      window.setTimeout(finish, 1200);
+    });
+  }
+
+  await new Promise((resolve) => window.setTimeout(resolve, Number(options.durationMs) || 1800));
+  hideSendFarewell();
+}
+
+async function shouldShowMonthlyCompleteImage() {
+  refreshSharedState();
+
+  if (!state.cloudReady) {
+    return false;
+  }
+
+  if (!hasMonthlySelectionTarget()) {
+    return false;
+  }
+
+  if (!window.FirebaseCloudSync || typeof window.FirebaseCloudSync.listSubmittedMonthsForPayload !== "function") {
+    return false;
+  }
+
+  const lookupMonths = buildSelectableMonthKeys();
+  if (!lookupMonths.length) {
+    return false;
+  }
+
+  let timeoutId = 0;
+  try {
+    const timeoutPromise = new Promise((_, reject) => {
+      timeoutId = window.setTimeout(() => {
+        reject(new Error("month_lookup_timeout"));
+      }, 5000);
+    });
+    const result = await Promise.race([
+      window.FirebaseCloudSync.listSubmittedMonthsForPayload(
+        buildCloudPayload(),
+        { monthKeys: lookupMonths }
+      ),
+      timeoutPromise,
+    ]);
+
+    if (!result || !result.ok) {
+      return false;
+    }
+
+    const submittedSet = new Set(Array.isArray(result.months) ? result.months : []);
+    return lookupMonths.every((monthKey) => submittedSet.has(monthKey));
+  } catch (error) {
+    console.warn("Failed to check monthly inspection availability:", error);
+    return false;
+  } finally {
+    window.clearTimeout(timeoutId);
+  }
+}
+
+async function openMonthlyApp() {
+  if (state.monthlyLaunchBusy) {
+    return;
+  }
+
+  state.monthlyLaunchBusy = true;
+  elements.app1Button.disabled = true;
+
+  try {
+    if (await shouldShowMonthlyCompleteImage()) {
+      await showSendFarewell({
+        src: MONTHLY_COMPLETE_IMAGE_SRC,
+        alt: MONTHLY_COMPLETE_IMAGE_ALT,
+      });
+      return;
+    }
+
+    openApp(APP_CONFIG.app1Path);
+  } finally {
+    state.monthlyLaunchBusy = false;
+    elements.app1Button.disabled = false;
+  }
+}
+
+function getCurrentYearMonth() {
+  const date = new Date();
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function compareYearMonth(left, right) {
+  return String(left || "").localeCompare(String(right || ""));
+}
+
+function parseYearMonth(yearMonth) {
+  const [yearText, monthText] = String(yearMonth || "").split("-");
+  return {
+    year: Number(yearText),
+    month: Number(monthText),
+  };
+}
+
+function getDaysInMonth(yearMonth) {
+  const { year, month } = parseYearMonth(yearMonth);
+  return new Date(year, month, 0).getDate();
+}
+
+function normalizeDailyInspectionChecksByDay(checksByDay) {
+  return Object.entries(checksByDay || {}).reduce((result, [day, values]) => {
+    result[String(day)] = normalizeDailyInspectionDayChecks(values || {});
+    return result;
+  }, {});
+}
+
+function normalizeDailyInspectionDayChecks(values) {
+  const normalized = {};
+  DAILY_INSPECTION_ITEM_IDS.forEach((itemId) => {
+    const value = values[itemId];
+    normalized[itemId] = DAILY_INSPECTION_CHECK_SEQUENCE.includes(value) ? value : "";
+  });
+  return normalized;
+}
+
+function collectDailyInspectionLegacyHolidayDays(checksByDay) {
+  return Object.entries(checksByDay || {})
+    .filter(([, values]) => {
+      const rows = DAILY_INSPECTION_ITEM_IDS.map((itemId) => values?.[itemId] || "");
+      return rows.length > 0 && rows.every((value) => value === DAILY_INSPECTION_HOLIDAY_CHECK);
+    })
+    .map(([day]) => Number(day));
+}
+
+function normalizeDailyInspectionHolidayDays(holidayDays, month) {
+  const lastDay = getDaysInMonth(month);
+  return [...new Set((holidayDays || [])
+    .map((day) => Number(day))
+    .filter((day) => Number.isInteger(day) && day >= 1 && day <= lastDay))]
+    .sort((left, right) => left - right);
+}
+
+function normalizeDailyInspectionRecord(record) {
+  const month = record.month || getCurrentYearMonth();
+  const legacyHolidayDays = collectDailyInspectionLegacyHolidayDays(record.checksByDay || {});
+  const holidayDays = normalizeDailyInspectionHolidayDays([...(record.holidayDays || []), ...legacyHolidayDays], month);
+  const checksByDay = normalizeDailyInspectionChecksByDay(record.checksByDay || {});
+
+  holidayDays.forEach((day) => {
+    delete checksByDay[String(day)];
+  });
+
+  return {
+    month,
+    vehicle: record.vehicle || "",
+    driver: record.driver || "",
+    checksByDay,
+    holidayDays,
+    _meta: record._meta || {},
+  };
+}
+
+function isDailyInspectionDayComplete(values) {
+  return Object.values(normalizeDailyInspectionDayChecks(values || {})).every((value) => value !== "");
+}
+
+function toEpochMillis(value) {
+  if (!value) {
+    return 0;
+  }
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+  if (typeof value === "string") {
+    const parsed = Date.parse(value);
+    return Number.isNaN(parsed) ? 0 : parsed;
+  }
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? 0 : value.getTime();
+  }
+  if (typeof value.toMillis === "function") {
+    try {
+      const millis = value.toMillis();
+      return Number.isFinite(millis) ? millis : 0;
+    } catch {
+      return 0;
+    }
+  }
+  if (typeof value.toDate === "function") {
+    try {
+      const date = value.toDate();
+      return date instanceof Date && !Number.isNaN(date.getTime()) ? date.getTime() : 0;
+    } catch {
+      return 0;
+    }
+  }
+  return 0;
+}
+
+function shouldReplaceDailyInspectionMonthRecord(currentRecord, nextRecord) {
+  const currentUpdatedAt = Number(currentRecord?._meta?.updatedAtMs || 0);
+  const nextUpdatedAt = Number(nextRecord?._meta?.updatedAtMs || 0);
+  if (nextUpdatedAt !== currentUpdatedAt) {
+    return nextUpdatedAt > currentUpdatedAt;
+  }
+
+  const currentDocId = String(currentRecord?._meta?.docId || "");
+  const nextDocId = String(nextRecord?._meta?.docId || "");
+  return nextDocId.localeCompare(currentDocId) > 0;
+}
+
+function readDailyInspectionLocalStoreRecords(vehicle, driver) {
+  try {
+    const store = JSON.parse(localStorage.getItem(DAILY_INSPECTION_STORAGE_NAMESPACE) || "{\"records\":{}}");
+    return Object.values(store.records || {})
+      .filter((record) => record && record.vehicle === vehicle && record.driver === driver)
+      .map((record) => normalizeDailyInspectionRecord(record));
+  } catch {
+    return [];
+  }
+}
+
+function hasDailyInspectionFirebaseConfig(firebaseConfig) {
+  return DAILY_INSPECTION_FIREBASE_REQUIRED_KEYS.every((key) => {
+    const value = firebaseConfig[key];
+    return typeof value === "string" && value.trim() && !value.includes("YOUR_");
+  });
+}
+
+async function listDailyInspectionRecords(vehicle, driver) {
+  const runtime = {
+    firebaseConfig: DAILY_INSPECTION_FIREBASE_CONFIG,
+    appSettings: DAILY_INSPECTION_APP_SETTINGS,
+  };
+
+  if (!hasDailyInspectionFirebaseConfig(runtime.firebaseConfig)) {
+    return readDailyInspectionLocalStoreRecords(vehicle, driver);
+  }
+
+  const [{ getApps, initializeApp }, firestoreModule] = await Promise.all([
+    import("https://www.gstatic.com/firebasejs/12.10.0/firebase-app.js"),
+    import("https://www.gstatic.com/firebasejs/12.10.0/firebase-firestore.js"),
+  ]);
+
+  const appName = "__launcher_daily_inspection__";
+  const existingApp = typeof getApps === "function"
+    ? getApps().find((app) => app.name === appName)
+    : null;
+  const app = existingApp || initializeApp(runtime.firebaseConfig, appName);
+  const db = firestoreModule.getFirestore(app);
+  const collectionName = String(runtime.appSettings.collectionName || "monthlyInspectionEntries");
+  const ref = firestoreModule.collection(db, collectionName);
+  const q = firestoreModule.query(
+    ref,
+    firestoreModule.where("vehicle", "==", vehicle),
+    firestoreModule.where("driver", "==", driver)
+  );
+  const snapshot = await firestoreModule.getDocs(q);
+
+  return snapshot.docs.map((snapshotDoc) => normalizeDailyInspectionRecord({
+    ...snapshotDoc.data(),
+    _meta: {
+      docId: snapshotDoc.id,
+      updatedAtMs: toEpochMillis(snapshotDoc.data().updatedAt),
+    },
+  }));
+}
+
+function getDailyInspectionPendingDays(month, record) {
+  const currentMonth = getCurrentYearMonth();
+  if (compareYearMonth(month, DAILY_INSPECTION_MIN_SELECTABLE_MONTH) < 0) {
+    return [];
+  }
+  const comparison = compareYearMonth(month, currentMonth);
+  if (comparison > 0) {
+    return [];
+  }
+
+  const safeRecord = normalizeDailyInspectionRecord(record || {
+    month,
+    vehicle: "",
+    driver: "",
+    checksByDay: {},
+    holidayDays: [],
+  });
+  const holidayDays = new Set((safeRecord.holidayDays || []).map((day) => String(day)));
+  const recordedDays = new Set(
+    Object.entries(safeRecord.checksByDay || {})
+      .filter(([, values]) => isDailyInspectionDayComplete(values))
+      .map(([day]) => String(day))
+  );
+  const lastDay = comparison === 0 ? new Date().getDate() : getDaysInMonth(month);
+  const days = [];
+
+  for (let day = 1; day <= lastDay; day += 1) {
+    if (!recordedDays.has(String(day)) && !holidayDays.has(String(day))) {
+      days.push(day);
+    }
+  }
+
+  return days;
+}
+
+function isDailyInspectionCurrentDayComplete(record) {
+  const currentMonth = getCurrentYearMonth();
+  const today = String(new Date().getDate());
+  const safeRecord = normalizeDailyInspectionRecord(record || {
+    month: currentMonth,
+    vehicle: "",
+    driver: "",
+    checksByDay: {},
+    holidayDays: [],
+  });
+
+  if (String(safeRecord.month || "") !== currentMonth) {
+    return false;
+  }
+
+  if ((safeRecord.holidayDays || []).some((day) => String(day) === today)) {
+    return true;
+  }
+
+  return isDailyInspectionDayComplete((safeRecord.checksByDay || {})[today]);
+}
+
+async function shouldShowDailyInspectionCompleteImage() {
+  refreshSharedState();
+
+  const current = state.shared.current || {};
+  const vehicle = String(current.vehicleNumber || "").trim();
+  const driver = String(current.driverName || "").trim();
+  if (!vehicle || !driver) {
+    return false;
+  }
+
+  const currentMonth = getCurrentYearMonth();
+  let records;
+  try {
+    records = await listDailyInspectionRecords(vehicle, driver);
+  } catch (error) {
+    console.warn("Failed to check daily inspection availability:", error);
+    return false;
+  }
+
+  const recordsByMonth = (records || []).reduce((result, record) => {
+    const monthKey = String(record.month || "");
+    const existing = result[monthKey];
+    if (!existing || shouldReplaceDailyInspectionMonthRecord(existing, record)) {
+      result[monthKey] = record;
+    }
+    return result;
+  }, {});
+
+  return isDailyInspectionCurrentDayComplete(recordsByMonth[currentMonth]);
+}
+
+async function openDailyInspectionApp() {
+  if (state.dailyLaunchBusy) {
+    return;
+  }
+
+  state.dailyLaunchBusy = true;
+  elements.app2Button.disabled = true;
+
+  try {
+    if (await shouldShowDailyInspectionCompleteImage()) {
+      await showSendFarewell({
+        src: DAILY_INSPECTION_COMPLETE_IMAGE_SRC,
+        alt: DAILY_INSPECTION_COMPLETE_IMAGE_ALT,
+      });
+      return;
+    }
+
+    openApp(APP_CONFIG.app2Path);
+  } finally {
+    state.dailyLaunchBusy = false;
+    elements.app2Button.disabled = false;
+  }
 }
 
 async function refreshSettingsBackups() {

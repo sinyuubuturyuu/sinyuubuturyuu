@@ -319,7 +319,7 @@
       }
 
       state.uid = (state.auth.currentUser && state.auth.currentUser.uid) || "anon";
-      log("Firebase cloud sync enabled");
+      log("Firebase cloud sync initialized");
       return true;
     })().finally(() => {
       state.readyPromise = null;

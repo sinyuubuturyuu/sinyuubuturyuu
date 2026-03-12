@@ -1,4 +1,4 @@
-const CACHE_NAME = "monthly-tire-check-v28";
+const CACHE_NAME = "monthly-tire-check-v30";
 const ASSETS = [
   "./",
   "./index.html",
@@ -10,7 +10,8 @@ const ASSETS = [
   "./firebase/firebase-cloud-sync.js?v=20260226-1",
   "./icons/icon-180.png",
   "./icons/icon-192.png",
-  "./icons/icon-512.png"
+  "./icons/icon-512.png",
+  "./icons/monthly-complete.png"
 ];
 const NETWORK_FIRST_PATH_SUFFIXES = [
   "/app.js",
@@ -41,9 +42,10 @@ self.addEventListener("activate", (event) => {
 self.addEventListener("fetch", (event) => {
   if (event.request.method !== "GET") return;
   const url = new URL(event.request.url);
+  const isSameOrigin = url.origin === self.location.origin;
 
-  // GitHub API should always be network-fresh for commit timestamp display.
-  if (url.hostname === "api.github.com") {
+  // Cross-origin requests like Firebase/Firestore should bypass the app cache.
+  if (!isSameOrigin) {
     event.respondWith(fetch(event.request));
     return;
   }
@@ -65,10 +67,7 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  if (
-    url.origin === self.location.origin
-    && NETWORK_FIRST_PATH_SUFFIXES.some((suffix) => url.pathname.endsWith(suffix))
-  ) {
+  if (NETWORK_FIRST_PATH_SUFFIXES.some((suffix) => url.pathname.endsWith(suffix))) {
     event.respondWith(
       fetch(event.request)
         .then((response) => {
@@ -102,8 +101,7 @@ self.addEventListener("fetch", (event) => {
           const copy = response.clone();
           caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
           return response;
-        })
-        .catch(() => caches.match("./index.html"));
+        });
     })
   );
 });
