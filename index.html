@@ -22,6 +22,20 @@
       <div class="button-group">
         <button id="app1Button" class="launcher-button primary" type="button"></button>
         <button id="app2Button" class="launcher-button primary" type="button"></button>
+        <section class="current-selection" aria-label="現在の設定">
+          <div class="current-selection-row">
+            <span class="current-selection-label">車両番号</span>
+            <span id="currentVehicleNumber" class="current-selection-value"></span>
+          </div>
+          <div class="current-selection-row">
+            <span class="current-selection-label">乗務員名</span>
+            <span id="currentDriverName" class="current-selection-value"></span>
+          </div>
+          <div class="current-selection-row">
+            <span class="current-selection-label">車種</span>
+            <span id="currentTruckType" class="current-selection-value"></span>
+          </div>
+        </section>
         <button id="settingsButton" class="launcher-button secondary" type="button">設定</button>
       </div>
     </section>
@@ -31,7 +45,7 @@
     <form id="settingsForm" class="settings-panel" method="dialog">
       <div class="settings-header">
         <h2>設定</h2>
-        <button id="closeSettingsButton" class="mini-button primary" type="button" aria-label="戻る">戻る</button>
+        <button id="closeSettingsButton" class="mini-button primary" type="button" aria-label="閉じる">閉じる</button>
       </div>
 
       <div class="settings-fields">
@@ -49,41 +63,18 @@
           <div class="section-head">
             <h3>車両番号</h3>
           </div>
-          <label class="field">
-            <span>車両番号を登録</span>
-            <div class="field-row">
-              <input id="newVehicleNumber" type="text" autocomplete="off" placeholder="例: 品川 100 あ 1234">
-              <button id="addVehicleBtn" class="mini-button primary" type="button">登録</button>
-              <button id="saveVehicleBackupBtn" class="mini-button" type="button">保存</button>
-              <button id="restoreVehicleBackupBtn" class="mini-button" type="button">復元</button>
-              <button id="deleteVehicleBackupBtn" class="mini-button" type="button">削除</button>
-            </div>
-            <div id="vehicleBackupStatus" class="backup-status">バックアップ: 読み込み待ち</div>
-          </label>
           <div class="field">
-            <span>登録済み車両番号</span>
+            <span>表示できる車両番号</span>
             <div id="vehicleList" class="value-list"></div>
           </div>
         </section>
 
         <section class="settings-section">
           <div class="section-head">
-            <h3>乗務員</h3>
+            <h3>乗務員名</h3>
           </div>
-          <label class="field">
-            <span>乗務員を登録</span>
-            <div class="field-row">
-              <input id="newDriverName" type="text" autocomplete="off" placeholder="漢字 例: 山田 太郎">
-              <input id="newDriverReading" type="text" autocomplete="off" placeholder="ひらがな 例: やまだ たろう">
-              <button id="addDriverBtn" class="mini-button primary" type="button">登録</button>
-              <button id="saveDriverBackupBtn" class="mini-button" type="button">保存</button>
-              <button id="restoreDriverBackupBtn" class="mini-button" type="button">復元</button>
-              <button id="deleteDriverBackupBtn" class="mini-button" type="button">削除</button>
-            </div>
-            <div id="driverBackupStatus" class="backup-status">バックアップ: 読み込み待ち</div>
-          </label>
           <div class="field">
-            <span>登録済み乗務員</span>
+            <span>表示できる乗務員名</span>
             <div id="driverList" class="value-list"></div>
           </div>
         </section>
@@ -92,22 +83,12 @@
           <div class="section-head">
             <h3>車種</h3>
           </div>
-          <label class="field">
-            <span>車種を登録</span>
-            <div class="field-row">
-              <select id="newTruckType" class="field-select"></select>
-              <button id="addTruckTypeBtn" class="mini-button primary" type="button">登録</button>
-            </div>
-          </label>
-          <div class="field">
-            <span>登録済み車種</span>
-            <div id="truckTypeList" class="value-list"></div>
-          </div>
+          <div id="truckTypeList" class="value-list"></div>
         </section>
       </div>
 
       <div class="settings-footer">
-        <button id="confirmSettingsButton" class="mini-button primary" type="button">決定</button>
+        <button id="confirmSettingsButton" class="mini-button primary" type="button">閉じる</button>
       </div>
 
       <p id="settingsStatus" class="settings-status" aria-live="polite"></p>

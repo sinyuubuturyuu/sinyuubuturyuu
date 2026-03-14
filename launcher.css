@@ -85,6 +85,44 @@ body {
   margin-top: 36px;
 }
 
+.current-selection {
+  display: grid;
+  gap: 10px;
+  padding: 16px 18px;
+  border: 1px solid var(--line);
+  border-radius: 22px;
+  background:
+    linear-gradient(180deg, rgba(23, 105, 210, 0.08), rgba(23, 105, 210, 0.02)),
+    var(--card);
+  text-align: left;
+}
+
+.current-selection-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--line);
+}
+
+.current-selection-row:last-child {
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+
+.current-selection-label {
+  color: var(--muted);
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
+.current-selection-value {
+  text-align: right;
+  font-weight: 700;
+  word-break: break-word;
+}
+
 .launcher-button,
 .mini-button {
   border: 0;
@@ -371,6 +409,15 @@ body {
 @media (max-width: 720px) {
   .launcher-card {
     padding: 28px 20px 20px;
+  }
+
+  .current-selection-row {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .current-selection-value {
+    text-align: left;
   }
 
   .settings-panel {

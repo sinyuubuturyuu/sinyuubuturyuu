@@ -4,13 +4,24 @@ const APP_CONFIG = {
   app2Name: "月次日常点検表",
   app2Path: "./getujinitijyoutenkenhyou/index.html",
 };
-const SETTINGS_BACKUP_KIND = Object.freeze({
-  VEHICLES: "vehicles",
-  DRIVERS: "drivers",
-});
 
-const SETTINGS_BACKUP_SLOT = 1;
 const MONTHLY_COMPLETE_IMAGE_SRC = "./getjityretenkenhyou/icons/monthly-complete.png";
+const REFERENCE_FIREBASE_CONFIG = Object.freeze({
+  apiKey: "AIzaSyAlpiGkwyoEW8U8X7HpK4XiqfwW8e_YOdQ",
+  authDomain: "getujityretenkenhyou.firebaseapp.com",
+  projectId: "getujityretenkenhyou",
+  storageBucket: "getujityretenkenhyou.firebasestorage.app",
+  messagingSenderId: "818371379903",
+  appId: "1:818371379903:web:421a1b390e41a48d2cfc0a",
+});
+const REFERENCE_VEHICLE_SETTINGS_DOC = Object.freeze({
+  collection: "monthly_tire_autosave",
+  id: "monthly_tire_company_settings_backup_vehicles_slot1",
+});
+const REFERENCE_DRIVER_SETTINGS_DOC = Object.freeze({
+  collection: "monthly_tire_autosave",
+  id: "monthly_tire_company_settings_backup_drivers_slot1",
+});
 const MONTHLY_COMPLETE_IMAGE_ALT = "Monthly inspection complete.";
 const DAILY_INSPECTION_COMPLETE_IMAGE_SRC = "./getujinitijyoutenkenhyou/icons/monthly-complete.png";
 const DAILY_INSPECTION_COMPLETE_IMAGE_ALT = "Daily inspection complete for this month.";
@@ -61,47 +72,32 @@ const elements = {
   app1Button: document.getElementById("app1Button"),
   app2Button: document.getElementById("app2Button"),
   settingsButton: document.getElementById("settingsButton"),
+  currentVehicleNumber: document.getElementById("currentVehicleNumber"),
+  currentDriverName: document.getElementById("currentDriverName"),
+  currentTruckType: document.getElementById("currentTruckType"),
   settingsDialog: document.getElementById("settingsDialog"),
   settingsForm: document.getElementById("settingsForm"),
   closeSettingsButton: document.getElementById("closeSettingsButton"),
   confirmSettingsButton: document.getElementById("confirmSettingsButton"),
   themeMode: document.getElementById("themeMode"),
-  newVehicleNumber: document.getElementById("newVehicleNumber"),
-  addVehicleBtn: document.getElementById("addVehicleBtn"),
-  saveVehicleBackupBtn: document.getElementById("saveVehicleBackupBtn"),
-  restoreVehicleBackupBtn: document.getElementById("restoreVehicleBackupBtn"),
-  deleteVehicleBackupBtn: document.getElementById("deleteVehicleBackupBtn"),
-  vehicleBackupStatus: document.getElementById("vehicleBackupStatus"),
   vehicleList: document.getElementById("vehicleList"),
-  newDriverName: document.getElementById("newDriverName"),
-  newDriverReading: document.getElementById("newDriverReading"),
-  addDriverBtn: document.getElementById("addDriverBtn"),
-  saveDriverBackupBtn: document.getElementById("saveDriverBackupBtn"),
-  restoreDriverBackupBtn: document.getElementById("restoreDriverBackupBtn"),
-  deleteDriverBackupBtn: document.getElementById("deleteDriverBackupBtn"),
-  driverBackupStatus: document.getElementById("driverBackupStatus"),
   driverList: document.getElementById("driverList"),
-  newTruckType: document.getElementById("newTruckType"),
-  addTruckTypeBtn: document.getElementById("addTruckTypeBtn"),
   truckTypeList: document.getElementById("truckTypeList"),
   settingsStatus: document.getElementById("settingsStatus"),
   sendFarewell: document.getElementById("sendFarewell"),
   sendFarewellImage: document.getElementById("sendFarewellImage"),
 };
-
 const state = {
   shared: sharedSettings.ensureState(),
-  backupMeta: {
-    [SETTINGS_BACKUP_KIND.VEHICLES]: null,
-    [SETTINGS_BACKUP_KIND.DRIVERS]: null,
-  },
   cloudReady: false,
-  backupLoading: false,
-  backupWorking: false,
+  referenceOptions: {
+    vehicles: [],
+    drivers: [],
+    loading: false,
+  },
   monthlyLaunchBusy: false,
   dailyLaunchBusy: false,
 };
-
 renderAll();
 bindEvents();
 registerServiceWorker();
@@ -115,8 +111,8 @@ function renderAll() {
   refreshSharedState();
   applyTheme();
   renderLauncherButtons();
+  renderCurrentSelection();
   renderSettings();
-  renderBackupControls();
 }
 
 function renderLauncherButtons() {
@@ -124,14 +120,20 @@ function renderLauncherButtons() {
   elements.app2Button.textContent = APP_CONFIG.app2Name;
 }
 
+function renderCurrentSelection() {
+  const current = state.shared.current || {};
+  elements.currentVehicleNumber.textContent = String(current.vehicleNumber || "").trim() || "未選択";
+  elements.currentDriverName.textContent = String(current.driverName || "").trim() || "未選択";
+  elements.currentTruckType.textContent = current.truckType
+    ? sharedSettings.truckTypeLabel(current.truckType)
+    : "未選択";
+}
+
 function renderSettings() {
   elements.themeMode.value = state.shared.theme;
   renderVehicleList();
   renderDriverList();
-  renderTruckTypeCatalogSelect();
   renderTruckTypeList();
-  renderBackupStatus(SETTINGS_BACKUP_KIND.VEHICLES);
-  renderBackupStatus(SETTINGS_BACKUP_KIND.DRIVERS);
 }
 
 function applyTheme() {
@@ -141,23 +143,23 @@ function applyTheme() {
 function renderVehicleList() {
   renderValueList({
     container: elements.vehicleList,
-    rows: state.shared.vehicles,
+    rows: getDisplayedVehicleRows(),
     currentValue: state.shared.current.vehicleNumber,
     labelFor: (value) => value,
     onSelect: (value) => setCurrentVehicleNumber(value),
-    onRemove: (value) => removeVehicleNumber(value),
+    emptyText: state.referenceOptions.loading ? "読み込み中です。" : "登録された車両番号はありません。",
   });
 }
 
 function renderDriverList() {
   renderValueList({
     container: elements.driverList,
-    rows: state.shared.drivers,
+    rows: getDisplayedDriverRows(),
     currentValue: state.shared.current.driverName,
     labelFor: (value) => sharedSettings.normalizeDriverName(value),
     currentKeyFor: (value) => sharedSettings.normalizeDriverName(value),
     onSelect: (value) => setCurrentDriverName(value),
-    onRemove: (value) => removeDriverName(value),
+    emptyText: state.referenceOptions.loading ? "読み込み中です。" : "登録された乗務員名はありません。",
   });
 }
 
@@ -189,8 +191,28 @@ function renderTruckTypeList() {
     currentValue: state.shared.current.truckType,
     labelFor: (value) => sharedSettings.truckTypeLabel(value),
     onSelect: (value) => setCurrentTruckType(value),
-    onRemove: (value) => removeTruckType(value),
   });
+}
+
+function getDisplayedVehicleRows() {
+  const rows = [...state.referenceOptions.vehicles];
+  const currentValue = String(state.shared.current.vehicleNumber || "").trim();
+  if (currentValue && !rows.includes(currentValue)) {
+    rows.unshift(currentValue);
+  }
+  return rows;
+}
+
+function getDisplayedDriverRows() {
+  const rows = [...state.referenceOptions.drivers];
+  const currentValue = String(state.shared.current.driverName || "").trim();
+  if (
+    currentValue
+    && !rows.some((value) => sharedSettings.normalizeDriverName(value) === currentValue)
+  ) {
+    rows.unshift(currentValue);
+  }
+  return rows;
 }
 
 function renderValueList({
@@ -199,7 +221,7 @@ function renderValueList({
   currentValue,
   labelFor,
   onSelect,
-  onRemove,
+  emptyText = "項目はありません。",
   currentKeyFor = (value) => value,
 }) {
   container.innerHTML = "";
@@ -207,12 +229,12 @@ function renderValueList({
   if (!rows.length) {
     const empty = document.createElement("div");
     empty.className = "empty-list";
-    empty.textContent = "まだ登録されていません。";
+    empty.textContent = emptyText;
     container.appendChild(empty);
     return;
   }
 
-  rows.forEach((value) => {
+  [...new Set(rows)].forEach((value) => {
     const row = document.createElement("div");
     const isCurrent = currentKeyFor(value) === currentValue;
     row.className = `value-item${isCurrent ? " current" : ""}`;
@@ -230,57 +252,123 @@ function renderValueList({
     selectButton.textContent = isCurrent ? "選択中" : "表示";
     selectButton.disabled = isCurrent;
     selectButton.addEventListener("click", () => onSelect(value));
-
-    const removeButton = document.createElement("button");
-    removeButton.type = "button";
-    removeButton.className = "mini-button";
-    removeButton.textContent = "削除";
-    removeButton.addEventListener("click", () => onRemove(value));
-
     actions.appendChild(selectButton);
-    actions.appendChild(removeButton);
     row.appendChild(label);
     row.appendChild(actions);
     container.appendChild(row);
   });
 }
 
-function renderBackupStatus(kind) {
-  const element = kind === SETTINGS_BACKUP_KIND.VEHICLES
-    ? elements.vehicleBackupStatus
-    : elements.driverBackupStatus;
-
-  if (!state.cloudReady) {
-    element.textContent = "バックアップ: 利用できません";
-    return;
+function getStringArray(source, fieldName = "values") {
+  if (!source || typeof source !== "object" || !Array.isArray(source[fieldName])) {
+    return [];
   }
-
-  if (state.backupLoading) {
-    element.textContent = "バックアップ: 読み込み中";
-    return;
-  }
-
-  const entry = state.backupMeta[kind];
-  if (!entry) {
-    element.textContent = "バックアップ: 未保存";
-    return;
-  }
-
-  const updatedAt = entry.serverUpdatedAt || entry.clientUpdatedAt;
-  const updatedText = updatedAt ? formatDateTimeMinute(updatedAt) : "日時不明";
-  element.textContent = `バックアップ: ${updatedText} / ${entry.valueCount}件`;
+  return source[fieldName].map((value) => String(value ?? "").trim()).filter(Boolean);
 }
 
-function renderBackupControls() {
-  const disabledBase = state.backupWorking || !state.cloudReady;
-  elements.saveVehicleBackupBtn.disabled = disabledBase || !state.shared.vehicles.length;
-  elements.restoreVehicleBackupBtn.disabled = disabledBase || !state.backupMeta[SETTINGS_BACKUP_KIND.VEHICLES];
-  elements.deleteVehicleBackupBtn.disabled = disabledBase || !state.backupMeta[SETTINGS_BACKUP_KIND.VEHICLES];
-  elements.saveDriverBackupBtn.disabled = disabledBase || !state.shared.drivers.length;
-  elements.restoreDriverBackupBtn.disabled = disabledBase || !state.backupMeta[SETTINGS_BACKUP_KIND.DRIVERS];
-  elements.deleteDriverBackupBtn.disabled = disabledBase || !state.backupMeta[SETTINGS_BACKUP_KIND.DRIVERS];
+function sortReferenceRows(rows, labelFor = (value) => String(value || "")) {
+  return [...rows].sort((left, right) => labelFor(left).localeCompare(labelFor(right), "ja"));
 }
 
+let referenceSettingsRuntimePromise = null;
+
+async function getReferenceSettingsRuntime() {
+  if (referenceSettingsRuntimePromise) {
+    return referenceSettingsRuntimePromise;
+  }
+
+  referenceSettingsRuntimePromise = (async () => {
+    const [appModule, authModule, firestoreModule] = await Promise.all([
+      import("https://www.gstatic.com/firebasejs/12.10.0/firebase-app.js"),
+      import("https://www.gstatic.com/firebasejs/12.10.0/firebase-auth.js"),
+      import("https://www.gstatic.com/firebasejs/12.10.0/firebase-firestore.js"),
+    ]);
+
+    const appName = "__launcher_reference_settings__";
+    const existingApp = typeof appModule.getApps === "function"
+      ? appModule.getApps().find((app) => app.name === appName)
+      : null;
+    const app = existingApp || appModule.initializeApp(REFERENCE_FIREBASE_CONFIG, appName);
+
+    return {
+      auth: authModule.getAuth(app),
+      authModule,
+      db: firestoreModule.getFirestore(app),
+      firestoreModule,
+    };
+  })().catch((error) => {
+    referenceSettingsRuntimePromise = null;
+    throw error;
+  });
+
+  return referenceSettingsRuntimePromise;
+}
+
+async function ensureReferenceSettingsAuth(runtime) {
+  if (runtime.auth.currentUser) {
+    return runtime.auth.currentUser;
+  }
+  const credential = await runtime.authModule.signInAnonymously(runtime.auth);
+  return credential.user;
+}
+
+async function loadReferenceOptionsFromFirebase() {
+  const runtime = await getReferenceSettingsRuntime();
+  await ensureReferenceSettingsAuth(runtime);
+  const { db, firestoreModule } = runtime;
+
+  const [vehicleSnapshot, driverSnapshot] = await Promise.all([
+    firestoreModule.getDoc(firestoreModule.doc(db, REFERENCE_VEHICLE_SETTINGS_DOC.collection, REFERENCE_VEHICLE_SETTINGS_DOC.id)),
+    firestoreModule.getDoc(firestoreModule.doc(db, REFERENCE_DRIVER_SETTINGS_DOC.collection, REFERENCE_DRIVER_SETTINGS_DOC.id)),
+  ]);
+
+  return {
+    vehicles: sortReferenceRows(getStringArray(vehicleSnapshot.exists() ? vehicleSnapshot.data() : {})),
+    drivers: sortReferenceRows(
+      getStringArray(driverSnapshot.exists() ? driverSnapshot.data() : {}),
+      (value) => sharedSettings.normalizeDriverName(value)
+    ),
+  };
+}
+
+async function saveReferenceValues(referenceDoc, values) {
+  const runtime = await getReferenceSettingsRuntime();
+  await ensureReferenceSettingsAuth(runtime);
+  const { db, firestoreModule } = runtime;
+  const normalizedValues = [...new Set(values.map((value) => String(value ?? "").trim()).filter(Boolean))];
+
+  await firestoreModule.setDoc(
+    firestoreModule.doc(db, referenceDoc.collection, referenceDoc.id),
+    {
+      values: normalizedValues,
+      updatedAt: firestoreModule.serverTimestamp(),
+    },
+    { merge: true }
+  );
+
+  return normalizedValues;
+}
+
+async function refreshReferenceOptions() {
+  state.referenceOptions.loading = true;
+  renderSettings();
+
+  try {
+    const referenceOptions = await loadReferenceOptionsFromFirebase();
+    sharedSettings.saveVehicles(referenceOptions.vehicles);
+    sharedSettings.saveDrivers(referenceOptions.drivers);
+    state.referenceOptions = {
+      ...referenceOptions,
+      loading: false,
+    };
+    renderSettings();
+  } catch (error) {
+    state.referenceOptions.loading = false;
+    renderSettings();
+    console.warn("Failed to load vehicle/driver options:", error);
+    setStatus(`車両番号と乗務員名の読み込みに失敗しました: ${error.message}`);
+  }
+}
 function bindEvents() {
   elements.app1Button.addEventListener("click", () => {
     void openMonthlyApp();
@@ -293,7 +381,7 @@ function bindEvents() {
     clearStatus();
     renderAll();
     elements.settingsDialog.showModal();
-    void refreshSettingsBackups();
+    void refreshReferenceOptions();
   });
 
   elements.closeSettingsButton.addEventListener("click", closeSettingsDialog);
@@ -318,53 +406,7 @@ function bindEvents() {
     renderAll();
     setStatus("表示モードを更新しました。");
   });
-
-  elements.addVehicleBtn.addEventListener("click", addVehicleNumber);
-  elements.newVehicleNumber.addEventListener("keydown", (event) => {
-    if (event.key !== "Enter") return;
-    event.preventDefault();
-    addVehicleNumber();
-  });
-
-  elements.addDriverBtn.addEventListener("click", addDriverName);
-  elements.newDriverName.addEventListener("keydown", (event) => {
-    if (event.key !== "Enter") return;
-    event.preventDefault();
-    if (!String(elements.newDriverReading.value || "").trim()) {
-      elements.newDriverReading.focus();
-      return;
-    }
-    addDriverName();
-  });
-  elements.newDriverReading.addEventListener("keydown", (event) => {
-    if (event.key !== "Enter") return;
-    event.preventDefault();
-    addDriverName();
-  });
-
-  elements.addTruckTypeBtn.addEventListener("click", addTruckType);
-
-  elements.saveVehicleBackupBtn.addEventListener("click", () => {
-    void saveSettingsBackup(SETTINGS_BACKUP_KIND.VEHICLES);
-  });
-  elements.restoreVehicleBackupBtn.addEventListener("click", () => {
-    void restoreSettingsBackup(SETTINGS_BACKUP_KIND.VEHICLES);
-  });
-  elements.deleteVehicleBackupBtn.addEventListener("click", () => {
-    void deleteSettingsBackup(SETTINGS_BACKUP_KIND.VEHICLES);
-  });
-
-  elements.saveDriverBackupBtn.addEventListener("click", () => {
-    void saveSettingsBackup(SETTINGS_BACKUP_KIND.DRIVERS);
-  });
-  elements.restoreDriverBackupBtn.addEventListener("click", () => {
-    void restoreSettingsBackup(SETTINGS_BACKUP_KIND.DRIVERS);
-  });
-  elements.deleteDriverBackupBtn.addEventListener("click", () => {
-    void deleteSettingsBackup(SETTINGS_BACKUP_KIND.DRIVERS);
-  });
 }
-
 function closeSettingsDialog() {
   elements.settingsDialog.close();
 }
@@ -386,7 +428,7 @@ function setCurrentVehicleNumber(value) {
 function setCurrentDriverName(value) {
   sharedSettings.updateCurrent({ driverName: value });
   renderAll();
-  setStatus("乗務員を更新しました。");
+  setStatus("乗務員名を更新しました。");
 }
 
 function setCurrentTruckType(value) {
@@ -395,84 +437,52 @@ function setCurrentTruckType(value) {
   setStatus("車種を更新しました。");
 }
 
-function addVehicleNumber() {
-  const value = String(elements.newVehicleNumber.value || "").trim();
-  if (!value) {
-    setStatus("車両番号を入力してください。");
-    return;
-  }
-
-  if (state.shared.vehicles.includes(value)) {
-    setStatus("同じ車両番号は登録済みです。");
-    return;
-  }
-
-  const nextVehicles = state.shared.vehicles.concat(value).sort((left, right) => left.localeCompare(right, "ja"));
-  sharedSettings.saveVehicles(nextVehicles);
-  elements.newVehicleNumber.value = "";
-  renderAll();
-  setStatus("車両番号を登録しました。");
-}
-
-function removeVehicleNumber(value) {
+async function removeVehicleNumber(value) {
   if (!window.confirm(`「${value}」を削除しますか？`)) {
     return;
   }
-  sharedSettings.saveVehicles(state.shared.vehicles.filter((entry) => entry !== value));
-  renderAll();
-  setStatus("車両番号を削除しました。");
-}
 
-function addDriverName() {
-  const rawName = String(elements.newDriverName.value || "").trim();
-  const rawReading = String(elements.newDriverReading.value || "").trim();
-  const driverName = sharedSettings.normalizeDriverName(rawName);
+  try {
+    const nextVehicles = getDisplayedVehicleRows().filter((entry) => entry !== value);
+    const savedVehicles = await saveReferenceValues(REFERENCE_VEHICLE_SETTINGS_DOC, nextVehicles);
+    sharedSettings.saveVehicles(savedVehicles);
 
-  if (!driverName) {
-    setStatus("乗務員名（漢字）を入力してください。");
-    return;
-  }
-
-  const normalizedEntry = sharedSettings.normalizeDriverEntry(
-    rawReading ? `${driverName}（${rawReading}）` : driverName
-  );
-  const existingIndex = state.shared.drivers.findIndex(
-    (entry) => sharedSettings.normalizeDriverName(entry) === driverName
-  );
-
-  if (existingIndex >= 0) {
-    if (state.shared.drivers[existingIndex] === normalizedEntry) {
-      setStatus("同じ乗務員は登録済みです。");
-      return;
+    if (String(state.shared.current.vehicleNumber || "").trim() === value) {
+      sharedSettings.updateCurrent({ vehicleNumber: savedVehicles[0] || "" });
     }
 
-    const nextDrivers = state.shared.drivers.slice();
-    nextDrivers.splice(existingIndex, 1, normalizedEntry);
-    sharedSettings.saveDrivers(nextDrivers);
-    elements.newDriverName.value = "";
-    elements.newDriverReading.value = "";
+    state.referenceOptions.vehicles = savedVehicles;
     renderAll();
-    setStatus("乗務員の読みを更新しました。");
-    return;
+    setStatus("車両番号を削除しました。");
+  } catch (error) {
+    console.warn("Failed to delete vehicle number:", error);
+    setStatus(`車両番号の削除に失敗しました: ${error.message}`);
   }
-
-  sharedSettings.saveDrivers(state.shared.drivers.concat(normalizedEntry));
-  elements.newDriverName.value = "";
-  elements.newDriverReading.value = "";
-  renderAll();
-  setStatus("乗務員を登録しました。");
 }
 
-function removeDriverName(value) {
+async function removeDriverName(value) {
   const label = sharedSettings.normalizeDriverName(value);
   if (!window.confirm(`「${label}」を削除しますか？`)) {
     return;
   }
-  sharedSettings.saveDrivers(state.shared.drivers.filter((entry) => entry !== value));
-  renderAll();
-  setStatus("乗務員を削除しました。");
-}
 
+  try {
+    const nextDrivers = getDisplayedDriverRows().filter((entry) => entry !== value);
+    const savedDrivers = await saveReferenceValues(REFERENCE_DRIVER_SETTINGS_DOC, nextDrivers);
+    sharedSettings.saveDrivers(savedDrivers);
+
+    if (String(state.shared.current.driverName || "").trim() === label) {
+      sharedSettings.updateCurrent({ driverName: sharedSettings.normalizeDriverName(savedDrivers[0] || "") });
+    }
+
+    state.referenceOptions.drivers = savedDrivers;
+    renderAll();
+    setStatus("乗務員名を削除しました。");
+  } catch (error) {
+    console.warn("Failed to delete driver name:", error);
+    setStatus(`乗務員名の削除に失敗しました: ${error.message}`);
+  }
+}
 function addTruckType() {
   const value = String(elements.newTruckType.value || "").trim();
   if (!value) {
@@ -505,7 +515,6 @@ function removeTruckType(value) {
 
 async function initializeCloudSync() {
   if (!window.FirebaseCloudSync || typeof window.FirebaseCloudSync.init !== "function") {
-    renderBackupControls();
     return;
   }
 
@@ -522,11 +531,7 @@ async function initializeCloudSync() {
   }
 
   renderAll();
-  if (state.cloudReady) {
-    void refreshSettingsBackups();
-  }
 }
-
 function buildCloudPayload() {
   const current = state.shared.current;
   return {
@@ -1005,138 +1010,6 @@ async function openDailyInspectionApp() {
   }
 }
 
-async function refreshSettingsBackups() {
-  if (!state.cloudReady || typeof window.FirebaseCloudSync.loadSettingsBackup !== "function") {
-    return;
-  }
-
-  state.backupLoading = true;
-  renderSettings();
-  renderBackupControls();
-
-  try {
-    const [vehicleResult, driverResult] = await Promise.all([
-      window.FirebaseCloudSync.loadSettingsBackup(SETTINGS_BACKUP_KIND.VEHICLES, SETTINGS_BACKUP_SLOT, { metadataOnly: true }),
-      window.FirebaseCloudSync.loadSettingsBackup(SETTINGS_BACKUP_KIND.DRIVERS, SETTINGS_BACKUP_SLOT, { metadataOnly: true }),
-    ]);
-
-    state.backupMeta[SETTINGS_BACKUP_KIND.VEHICLES] = vehicleResult.ok ? vehicleResult.backup : null;
-    state.backupMeta[SETTINGS_BACKUP_KIND.DRIVERS] = driverResult.ok ? driverResult.backup : null;
-  } catch (error) {
-    console.warn("Failed to refresh settings backups:", error);
-  } finally {
-    state.backupLoading = false;
-    renderSettings();
-    renderBackupControls();
-  }
-}
-
-async function saveSettingsBackup(kind) {
-  if (!state.cloudReady || typeof window.FirebaseCloudSync.saveSettingsBackup !== "function") {
-    setStatus("バックアップは利用できません。");
-    return;
-  }
-
-  const values = kind === SETTINGS_BACKUP_KIND.VEHICLES ? state.shared.vehicles : state.shared.drivers;
-  if (!values.length) {
-    setStatus("保存する設定がありません。");
-    return;
-  }
-
-  state.backupWorking = true;
-  renderBackupControls();
-
-  try {
-    const result = await window.FirebaseCloudSync.saveSettingsBackup(
-      kind,
-      SETTINGS_BACKUP_SLOT,
-      values,
-      { source: "launcher" }
-    );
-
-    if (!result.ok || !result.backup) {
-      setStatus("バックアップの保存に失敗しました。");
-      return;
-    }
-
-    state.backupMeta[kind] = result.backup;
-    renderSettings();
-    setStatus("バックアップを保存しました。");
-  } catch (error) {
-    console.warn("Failed to save settings backup:", error);
-    setStatus("バックアップの保存に失敗しました。");
-  } finally {
-    state.backupWorking = false;
-    renderBackupControls();
-  }
-}
-
-async function restoreSettingsBackup(kind) {
-  if (!state.cloudReady || typeof window.FirebaseCloudSync.loadSettingsBackup !== "function") {
-    setStatus("バックアップは利用できません。");
-    return;
-  }
-
-  state.backupWorking = true;
-  renderBackupControls();
-
-  try {
-    const result = await window.FirebaseCloudSync.loadSettingsBackup(kind, SETTINGS_BACKUP_SLOT);
-    if (!result.ok || !result.backup) {
-      setStatus("バックアップの復元に失敗しました。");
-      return;
-    }
-
-    if (kind === SETTINGS_BACKUP_KIND.VEHICLES) {
-      sharedSettings.saveVehicles(result.backup.values);
-    } else {
-      sharedSettings.saveDrivers(result.backup.values);
-    }
-
-    state.backupMeta[kind] = result.backup;
-    renderAll();
-    setStatus("バックアップを復元しました。");
-  } catch (error) {
-    console.warn("Failed to restore settings backup:", error);
-    setStatus("バックアップの復元に失敗しました。");
-  } finally {
-    state.backupWorking = false;
-    renderBackupControls();
-  }
-}
-
-async function deleteSettingsBackup(kind) {
-  if (!state.cloudReady || typeof window.FirebaseCloudSync.deleteSettingsBackup !== "function") {
-    setStatus("バックアップは利用できません。");
-    return;
-  }
-
-  if (!window.confirm("バックアップを削除しますか？")) {
-    return;
-  }
-
-  state.backupWorking = true;
-  renderBackupControls();
-
-  try {
-    const result = await window.FirebaseCloudSync.deleteSettingsBackup(kind, SETTINGS_BACKUP_SLOT);
-    if (!result.ok) {
-      setStatus("バックアップの削除に失敗しました。");
-      return;
-    }
-
-    state.backupMeta[kind] = null;
-    renderSettings();
-    setStatus("バックアップを削除しました。");
-  } catch (error) {
-    console.warn("Failed to delete settings backup:", error);
-    setStatus("バックアップの削除に失敗しました。");
-  } finally {
-    state.backupWorking = false;
-    renderBackupControls();
-  }
-}
-
 function todayText() {
   const date = new Date();
   const year = date.getFullYear();
@@ -1191,3 +1064,4 @@ function registerServiceWorker() {
       });
   });
 }
+
