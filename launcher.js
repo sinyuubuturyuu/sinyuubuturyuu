@@ -80,8 +80,9 @@ const elements = {
   closeSettingsButton: document.getElementById("closeSettingsButton"),
   confirmSettingsButton: document.getElementById("confirmSettingsButton"),
   themeMode: document.getElementById("themeMode"),
-  vehicleList: document.getElementById("vehicleList"),
-  driverList: document.getElementById("driverList"),
+  vehicleSelect: document.getElementById("vehicleSelect"),
+  driverSelect: document.getElementById("driverSelect"),
+  truckTypeSelect: document.getElementById("truckTypeSelect"),
   truckTypeList: document.getElementById("truckTypeList"),
   settingsStatus: document.getElementById("settingsStatus"),
   sendFarewell: document.getElementById("sendFarewell"),
@@ -131,13 +132,48 @@ function renderCurrentSelection() {
 
 function renderSettings() {
   elements.themeMode.value = state.shared.theme;
-  renderVehicleList();
-  renderDriverList();
-  renderTruckTypeList();
+  renderVehicleSelect();
+  renderDriverSelect();
+  renderTruckTypeSelect();
 }
 
 function applyTheme() {
   document.documentElement.setAttribute("data-theme", state.shared.theme === "dark" ? "dark" : "light");
+}
+
+function renderVehicleSelect() {
+  renderChoiceSelect({
+    select: elements.vehicleSelect,
+    rows: getDisplayedVehicleRows(),
+    currentValue: state.shared.current.vehicleNumber,
+    labelFor: (value) => value,
+    loadingText: "読み込み中です。",
+    emptyText: "登録された車両番号はありません。",
+  });
+
+}
+
+function renderDriverSelect() {
+  renderChoiceSelect({
+    select: elements.driverSelect,
+    rows: getDisplayedDriverRows(),
+    currentValue: state.shared.current.driverName,
+    labelFor: (value) => sharedSettings.normalizeDriverName(value),
+    currentKeyFor: (value) => sharedSettings.normalizeDriverName(value),
+    loadingText: "読み込み中です。",
+    emptyText: "登録された乗務員名はありません。",
+  });
+
+}
+
+function renderTruckTypeSelect() {
+  renderChoiceSelect({
+    select: elements.truckTypeSelect,
+    rows: state.shared.truckTypes,
+    currentValue: state.shared.current.truckType,
+    labelFor: (value) => sharedSettings.truckTypeLabel(value),
+    emptyText: "登録された車種はありません。",
+  });
 }
 
 function renderVehicleList() {
@@ -213,6 +249,49 @@ function getDisplayedDriverRows() {
     rows.unshift(currentValue);
   }
   return rows;
+}
+
+function renderChoiceSelect({
+  select,
+  rows,
+  currentValue,
+  labelFor,
+  loadingText = "読み込み中です。",
+  emptyText = "項目はありません。",
+  currentKeyFor = (value) => value,
+}) {
+  select.innerHTML = "";
+
+  if (state.referenceOptions.loading) {
+    select.appendChild(new Option(loadingText, ""));
+    select.value = "";
+    select.disabled = true;
+    return;
+  }
+
+  const uniqueRows = [];
+  const seenKeys = new Set();
+  rows.forEach((value) => {
+    const key = String(currentKeyFor(value) ?? "");
+    if (!key || seenKeys.has(key)) return;
+    seenKeys.add(key);
+    uniqueRows.push(value);
+  });
+
+  if (!uniqueRows.length) {
+    select.appendChild(new Option(emptyText, ""));
+    select.value = "";
+    select.disabled = true;
+    return;
+  }
+
+  uniqueRows.forEach((value) => {
+    select.appendChild(new Option(labelFor(value), value));
+  });
+
+  const selectedRow = uniqueRows.find((value) => currentKeyFor(value) === currentValue) || uniqueRows[0];
+  select.value = selectedRow;
+  select.disabled = false;
 }
 
 function renderValueList({
@@ -324,9 +403,8 @@ async function loadReferenceOptionsFromFirebase() {
 
   return {
     vehicles: sortReferenceRows(getStringArray(vehicleSnapshot.exists() ? vehicleSnapshot.data() : {})),
-    drivers: sortReferenceRows(
-      getStringArray(driverSnapshot.exists() ? driverSnapshot.data() : {}),
-      (value) => sharedSettings.normalizeDriverName(value)
+    drivers: sharedSettings.normalizeDrivers(
+      getStringArray(driverSnapshot.exists() ? driverSnapshot.data() : {})
     ),
   };
 }
@@ -405,6 +483,23 @@ function bindEvents() {
     sharedSettings.saveTheme(event.target.value);
     renderAll();
     setStatus("表示モードを更新しました。");
+  });
+  elements.vehicleSelect.addEventListener("change", (event) => {
+    const value = String(event.target.value || "").trim();
+    if (!value) return;
+    setCurrentVehicleNumber(value);
+  });
+
+  elements.driverSelect.addEventListener("change", (event) => {
+    const value = String(event.target.value || "").trim();
+    if (!value) return;
+    setCurrentDriverName(value);
+  });
+
+  elements.truckTypeSelect.addEventListener("change", (event) => {
+    const value = String(event.target.value || "").trim();
+    if (!value) return;
+    setCurrentTruckType(value);
   });
 }
 function closeSettingsDialog() {
