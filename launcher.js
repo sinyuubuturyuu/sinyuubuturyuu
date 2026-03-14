@@ -27,7 +27,6 @@ const DAILY_INSPECTION_APP_SETTINGS = Object.freeze({
   useLocalFallbackWhenFirebaseIsMissing: true,
 });
 const DAILY_INSPECTION_STORAGE_NAMESPACE = "monthly_inspection_app_v1";
-const DAILY_INSPECTION_COMPLETION_MARKER_KEY = "monthly_inspection_completion_marker_v1";
 const DAILY_INSPECTION_MIN_SELECTABLE_MONTH = "2026-01";
 const DAILY_INSPECTION_FIREBASE_REQUIRED_KEYS = ["apiKey", "authDomain", "projectId", "appId"];
 const DAILY_INSPECTION_CHECK_SEQUENCE = ["", "レ", "×", "▲"];
@@ -708,6 +707,29 @@ function getDaysInMonth(yearMonth) {
   return new Date(year, month, 0).getDate();
 }
 
+function addMonths(yearMonth, delta) {
+  const { year, month } = parseYearMonth(yearMonth);
+  const next = new Date(year, month - 1 + delta, 1);
+  return `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function getDailyInspectionLookupMonths() {
+  const currentMonth = getCurrentYearMonth();
+  if (compareYearMonth(currentMonth, DAILY_INSPECTION_MIN_SELECTABLE_MONTH) < 0) {
+    return [];
+  }
+
+  const lookupMonths = [];
+  let cursor = DAILY_INSPECTION_MIN_SELECTABLE_MONTH;
+
+  while (compareYearMonth(cursor, currentMonth) <= 0) {
+    lookupMonths.push(cursor);
+    cursor = addMonths(cursor, 1);
+  }
+
+  return lookupMonths;
+}
+
 function normalizeDailyInspectionChecksByDay(checksByDay) {
   return Object.entries(checksByDay || {}).reduce((result, [day, values]) => {
     result[String(day)] = normalizeDailyInspectionDayChecks(values || {});
@@ -818,14 +840,6 @@ function readDailyInspectionLocalStoreRecords(vehicle, driver) {
       .map((record) => normalizeDailyInspectionRecord(record));
   } catch {
     return [];
-  }
-}
-
-function readDailyInspectionCompletionMarker() {
-  try {
-    return JSON.parse(localStorage.getItem(DAILY_INSPECTION_COMPLETION_MARKER_KEY) || "null");
-  } catch {
-    return null;
   }
 }
 
@@ -942,17 +956,11 @@ async function shouldShowDailyInspectionCompleteImage() {
     return false;
   }
 
-  const marker = readDailyInspectionCompletionMarker();
-  if (
-    marker
-    && String(marker.date || "") === todayText()
-    && String(marker.vehicle || "").trim() === vehicle
-    && String(marker.driver || "").trim() === driver
-  ) {
-    return true;
+  const lookupMonths = getDailyInspectionLookupMonths();
+  if (!lookupMonths.length) {
+    return false;
   }
 
-  const currentMonth = getCurrentYearMonth();
   let records;
   try {
     records = await listDailyInspectionRecords(vehicle, driver);
@@ -970,7 +978,7 @@ async function shouldShowDailyInspectionCompleteImage() {
     return result;
   }, {});
 
-  return isDailyInspectionCurrentDayComplete(recordsByMonth[currentMonth]);
+  return lookupMonths.every((monthKey) => getDailyInspectionPendingDays(monthKey, recordsByMonth[monthKey]).length === 0);
 }
 
 async function openDailyInspectionApp() {
