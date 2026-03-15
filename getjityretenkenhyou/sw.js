@@ -1,4 +1,4 @@
-const CACHE_NAME = "monthly-tire-check-v35";
+const CACHE_NAME = "monthly-tire-check-v36";
 const ASSETS = [
   "./",
   "./index.html",
@@ -11,7 +11,8 @@ const ASSETS = [
   "./icons/icon-180.png",
   "./icons/icon-192.png",
   "./icons/icon-512.png",
-  "./icons/monthly-complete.png"
+  "./icons/monthly-complete.png",
+  "./icons/send-farewell.png?v=20260315-15"
 ];
 const NETWORK_FIRST_PATH_SUFFIXES = [
   "/app.js",
