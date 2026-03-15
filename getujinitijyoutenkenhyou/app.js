@@ -14,7 +14,10 @@ const THEME_COLORS = Object.freeze({
   dark: "#0f1722"
 });
 const FIREBASE_REQUIRED_KEYS = ["apiKey", "authDomain", "projectId", "appId"];
-const INSPECTION_GUIDE_MESSAGE = "未入力日のみ表示しています。タップすると空欄 → レ → × → ▲と入力されます。休みの日は日付を押して休みとしてください。もう一度押すと解除できます。一日分以上を入力したら上の送信ボタンを押してください。";
+const INSPECTION_GUIDE_MESSAGE = `未入力日のみ表示しています。
+タップすると空欄 → レ → × → ▲と入力されます。　
+休みの日は日付を押して休みとしてください。もう一度押すと解除できます。
+一日分以上を入力したら上の送信ボタンを押してください。`;
 const APP_VERSION = "20260312-4";
 const MONTHLY_COMPLETE_IMAGE_SRC = "./icons/monthly-complete.png";
 const MONTHLY_COMPLETE_IMAGE_ALT = "今月分はすべて完了しました。明日もよろしくお願いします。";
