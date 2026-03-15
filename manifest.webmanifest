@@ -1,6 +1,6 @@
 {
-  "name": "シンユウ物流アプリランチャー",
-  "short_name": "シンユウ物流",
+  "name": "シンユウ物流アプリ",
+  "short_name": "シンユウ物流アプリ",
   "description": "点検アプリを設定して起動するランチャー",
   "start_url": "./index.html",
   "scope": "./",
