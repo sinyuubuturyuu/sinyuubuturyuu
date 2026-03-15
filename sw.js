@@ -1,4 +1,4 @@
-const CACHE_NAME = "sinyuubuturyuu-launcher-v5";
+const CACHE_NAME = "sinyuubuturyuu-launcher-v6";
 const APP_SHELL = [
   "./",
   "./index.html",
@@ -6,8 +6,10 @@ const APP_SHELL = [
   "./launcher.js",
   "./manifest.webmanifest",
   "./sinyuubuturyuu-icon.png",
+  "./apple-touch-icon.png",
   "./icon-192.png",
   "./icon-512.png",
+  "./icon-512-maskable.png",
 ];
 const NETWORK_FIRST_PATH_SUFFIXES = [
   "/index.html",
