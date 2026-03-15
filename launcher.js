@@ -7,13 +7,12 @@ const APP_CONFIG = {
 
 const MONTHLY_COMPLETE_IMAGE_SRC = "./getjityretenkenhyou/icons/monthly-complete.png";
 const REFERENCE_FIREBASE_CONFIG = Object.freeze(window.APP_FIREBASE_CONFIG || {
-  apiKey: "AIzaSyCvoqg9H2OZewp8nni1tKeOLJlXjO06s7w",
-  authDomain: "getujityretenkenhyou-a92f3.firebaseapp.com",
-  projectId: "getujityretenkenhyou-a92f3",
-  storageBucket: "getujityretenkenhyou-a92f3.firebasestorage.app",
-  messagingSenderId: "976212280398",
-  appId: "1:976212280398:web:2857aef38c5b11cdf46f1f",
-  measurementId: "G-2V09L51NDY",
+  apiKey: "AIzaSyAlpiGkwyoEW8U8X7HpK4XiqfwW8e_YOdQ",
+  authDomain: "getujityretenkenhyou.firebaseapp.com",
+  projectId: "getujityretenkenhyou",
+  storageBucket: "getujityretenkenhyou.firebasestorage.app",
+  messagingSenderId: "818371379903",
+  appId: "1:818371379903:web:421a1b390e41a48d2cfc0a",
 });
 const REFERENCE_VEHICLE_SETTINGS_DOC = Object.freeze({
   collection: "monthly_tire_autosave",

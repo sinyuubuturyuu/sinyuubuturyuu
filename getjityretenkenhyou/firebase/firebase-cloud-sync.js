@@ -250,6 +250,13 @@
     };
   }
 
+  function extractInspectionMonthFromRow(row) {
+    const topLevelMonth = normalizeText(row && row.inspectionMonth);
+    if (/^\d{4}-\d{2}$/.test(topLevelMonth)) return topLevelMonth;
+    const inspectionDate = row && row.state && row.state.current && row.state.current.inspectionDate;
+    return parseMonthFromDateText(inspectionDate) || "";
+  }
+
   function buildBasicSignature(entry) {
     const basic = extractBasicInfo(entry);
     // The document id already includes inspectionMonth, so keeping the day here
@@ -371,7 +378,6 @@
 
     return state.readyPromise;
   }
-
   function toDocData(entry) {
     const inspectionMonth = extractInspectionMonth(entry);
     const basicInfo = extractBasicInfo(entry);
@@ -478,7 +484,6 @@
       return { ok: false, reason: toFirestoreReason(error, "write_failed"), backup: null };
     }
   }
-
   async function loadLegacySettingsBackup(kind, slot, metadataOnly) {
     const ready = await ensureFirebaseReady();
     const docRef = getSettingsBackupDocRef(kind, slot);
@@ -501,7 +506,6 @@
       return { ok: false, reason: toFirestoreReason(error, "read_failed"), backup: null };
     }
   }
-
   async function loadSettingsDirectoryBackup(kind, slot, metadataOnly) {
     const config = getSettingsDirectoryConfig(kind);
     if (!config) {
@@ -557,7 +561,6 @@
       return { ok: false, reason: toFirestoreReason(error, "delete_failed") };
     }
   }
-
   async function deleteSettingsDirectoryBackup(kind, slot) {
     const config = getSettingsDirectoryConfig(kind);
     if (!config) {
@@ -655,7 +658,6 @@
     if (!normalizedKind || !normalizedSlot) {
       return { ok: false, reason: "invalid_target", backup: null };
     }
-
     if (isSettingsDirectoryKind(normalizedKind)) {
       const directoryResult = await loadSettingsDirectoryBackup(normalizedKind, normalizedSlot, metadataOnly);
       if (directoryResult.ok || directoryResult.reason !== "not_found") {
@@ -698,7 +700,6 @@
     if (!normalizedKind || !normalizedSlot) {
       return { ok: false, reason: "invalid_target" };
     }
-
     if (isSettingsDirectoryKind(normalizedKind)) {
       return deleteSettingsDirectoryBackup(normalizedKind, normalizedSlot);
     }
@@ -930,6 +931,7 @@
     };
     const docInfo = getDocInfoForEntry(entry);
     const companyCode = String(state.options && state.options.companyCode ? state.options.companyCode : "").trim();
+    const targetBasicSignature = normalizeText(docInfo && docInfo.basicSignature);
     const targetBasic = {
       driverName: normalizeText(docInfo && docInfo.basicInfo ? docInfo.basicInfo.driverName : ""),
       vehicleNumber: normalizeText(docInfo && docInfo.basicInfo ? docInfo.basicInfo.vehicleNumber : ""),
@@ -948,10 +950,24 @@
       };
     };
     const sameLookupTarget = (row) => {
+      const rowBasicSignature = normalizeText(row && row.basicSignature);
+      if (rowBasicSignature && targetBasicSignature) {
+        return rowBasicSignature === targetBasicSignature;
+      }
       const basic = basicInfoOf(row);
       return basic.driverName === targetBasic.driverName
         && basic.vehicleNumber === targetBasic.vehicleNumber
         && basic.truckType === targetBasic.truckType;
+    };
+    const requestedMonthSet = new Set(requestedMonths);
+    const collectSubmittedMonths = (rows, submitted, monthFilter = requestedMonthSet) => {
+      rows.forEach((row) => {
+        if (!hasState(row) || !sameCompany(row) || !sameLookupTarget(row)) return;
+        const inspectionMonth = extractInspectionMonthFromRow(row);
+        if (monthFilter.has(inspectionMonth)) {
+          submitted.add(inspectionMonth);
+        }
+      });
     };
 
     try {
@@ -964,14 +980,25 @@
           : query.where("inspectionMonth", "in", chunk);
         const snap = await query.limit(240).get();
         if (!snap || snap.empty) continue;
+        const rows = [];
         snap.forEach((doc) => {
-          const row = doc.data() || {};
-          if (!hasState(row) || !sameCompany(row) || !sameLookupTarget(row)) return;
-          const inspectionMonth = String(row && row.inspectionMonth ? row.inspectionMonth : "").trim();
-          if (requestedMonths.includes(inspectionMonth)) {
-            submitted.add(inspectionMonth);
-          }
+          rows.push(doc.data() || {});
         });
+        collectSubmittedMonths(rows, submitted);
+      }
+
+      if (submitted.size < requestedMonths.length) {
+        const remainingMonths = requestedMonths.filter((monthKey) => !submitted.has(monthKey));
+        if (remainingMonths.length) {
+          const fallbackSnap = await state.db.collection(state.options.collection).limit(400).get();
+          if (fallbackSnap && !fallbackSnap.empty) {
+            const fallbackRows = [];
+            fallbackSnap.forEach((doc) => {
+              fallbackRows.push(doc.data() || {});
+            });
+            collectSubmittedMonths(fallbackRows, submitted, new Set(remainingMonths));
+          }
+        }
       }
 
       return {

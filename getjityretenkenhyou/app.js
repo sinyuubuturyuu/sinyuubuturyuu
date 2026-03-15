@@ -4,6 +4,7 @@
       const STORAGE = {
         current: "tire.monthly.current.v1",
         previous: "tire.monthly.previous.v1",
+        submittedMonths: "tire.monthly.submitted-months.v1",
         vehicles: "tire.monthly.vehicles.v1",
         drivers: "tire.monthly.drivers.v1",
         truckTypes: "tire.monthly.trucktypes.v1",
@@ -377,6 +378,35 @@
         if (!match) return "";
         return `${match[1]}-${match[2]}`;
       };
+      const normalizeSubmittedMonthArray = (rows) => {
+        if (!Array.isArray(rows)) return [];
+        const uniq = [];
+        rows.forEach((item) => {
+          const monthKey = normalizeMonthKey(item);
+          if (!monthKey) return;
+          if (!uniq.includes(monthKey)) uniq.push(monthKey);
+        });
+        return uniq.slice(-24);
+      };
+      const normalizeSubmittedMonthCache = (source) => {
+        if (!source || typeof source !== "object") return {};
+        const normalized = {};
+        Object.entries(source).forEach(([rawKey, rawMonths]) => {
+          const key = String(rawKey || "").trim();
+          if (!key) return;
+          const months = normalizeSubmittedMonthArray(rawMonths);
+          if (months.length) normalized[key] = months;
+        });
+        return normalized;
+      };
+      const submittedMonthSignatureOf = (source) => {
+        const signature = basicSignatureOf(source);
+        return typeof signature === "string" ? signature.trim() : "";
+      };
+      const submittedMonthKeyOf = (source) => (
+        normalizeMonthKey(source && source.targetMonth)
+        || monthKeyFromDateText(source && source.inspectionDate)
+      );
       const previousMonthKey = (monthKey) => {
         const match = /^(\d{4})-(\d{2})$/.exec(String(monthKey || "").trim());
         if (!match) return "";
@@ -478,6 +508,7 @@
 
       let current = normalizeCurrent(read(STORAGE.current, defaultCurrent()));
       let previous = normalizePrevious(read(STORAGE.previous, null));
+      let submittedMonthCache = normalizeSubmittedMonthCache(read(STORAGE.submittedMonths, {}));
       let vehicles = normalizeVehicles(read(STORAGE.vehicles, []));
       let drivers = normalizeDrivers(read(STORAGE.drivers, []));
       let truckTypes = normalizeTruckTypes(read(STORAGE.truckTypes, TRUCK_TYPE_CATALOG.map((item) => item.value)));
@@ -548,6 +579,32 @@
       const saveTruckTypes = () => {
         localStorage.setItem(STORAGE.truckTypes, JSON.stringify(truckTypes));
         scheduleCloudSync("master");
+      };
+      const saveSubmittedMonthCache = () => {
+        submittedMonthCache = normalizeSubmittedMonthCache(submittedMonthCache);
+        const keys = Object.keys(submittedMonthCache);
+        if (!keys.length) {
+          localStorage.removeItem(STORAGE.submittedMonths);
+          return;
+        }
+        localStorage.setItem(STORAGE.submittedMonths, JSON.stringify(submittedMonthCache));
+      };
+      const rememberSubmittedMonth = (source) => {
+        if (!hasCompleteBasicInfo(source)) return false;
+        const signature = submittedMonthSignatureOf(source);
+        const monthKey = submittedMonthKeyOf(source);
+        if (!signature || !monthKey) return false;
+        const currentMonths = Array.isArray(submittedMonthCache[signature]) ? submittedMonthCache[signature] : [];
+        const nextMonths = normalizeSubmittedMonthArray([...currentMonths, monthKey]);
+        if (isSameStringArray(nextMonths, currentMonths)) return false;
+        submittedMonthCache[signature] = nextMonths;
+        saveSubmittedMonthCache();
+        return true;
+      };
+      const getCachedSubmittedMonthsForCurrent = () => {
+        const signature = submittedMonthSignatureOf(current);
+        if (!signature) return [];
+        return normalizeSubmittedMonthArray(submittedMonthCache[signature]);
       };
 
       function cleanupLegacyExportDirectoryStorage() {
@@ -679,8 +736,11 @@
 
       async function refreshAvailableMonths() {
         const lookupMonths = buildSelectableMonthKeys();
-        availableMonthKeys = lookupMonths.slice();
-        submittedMonthKeys = [];
+        const cachedSubmittedSet = new Set(
+          getCachedSubmittedMonthsForCurrent().filter((monthKey) => lookupMonths.includes(monthKey))
+        );
+        availableMonthKeys = lookupMonths.filter((monthKey) => !cachedSubmittedSet.has(monthKey));
+        submittedMonthKeys = lookupMonths.filter((monthKey) => cachedSubmittedSet.has(monthKey));
         monthSelectionError = "";
 
         if (!hasBasicSelectionTarget()) {
@@ -719,18 +779,23 @@
           if (token !== monthLookupToken) return;
 
           if (result && result.ok) {
-            submittedMonthKeys = Array.isArray(result.months) ? result.months.slice() : [];
-            const submittedSet = new Set(submittedMonthKeys);
+            const submittedSet = new Set(cachedSubmittedSet);
+            (Array.isArray(result.months) ? result.months : []).forEach((monthKey) => {
+              if (lookupMonths.includes(monthKey)) submittedSet.add(monthKey);
+            });
+            submittedMonthKeys = lookupMonths.filter((monthKey) => submittedSet.has(monthKey));
             availableMonthKeys = lookupMonths.filter((monthKey) => !submittedSet.has(monthKey));
           } else {
             monthSelectionError = "送信済み月の確認に失敗したため、対象月をすべて表示しています。";
-            availableMonthKeys = lookupMonths.slice();
+            submittedMonthKeys = lookupMonths.filter((monthKey) => cachedSubmittedSet.has(monthKey));
+            availableMonthKeys = lookupMonths.filter((monthKey) => !cachedSubmittedSet.has(monthKey));
           }
         } catch (error) {
           if (token !== monthLookupToken) return;
           console.warn("Failed to load available months:", error);
           monthSelectionError = "送信済み月の確認に失敗したため、対象月をすべて表示しています。";
-          availableMonthKeys = lookupMonths.slice();
+          submittedMonthKeys = lookupMonths.filter((monthKey) => cachedSubmittedSet.has(monthKey));
+          availableMonthKeys = lookupMonths.filter((monthKey) => !cachedSubmittedSet.has(monthKey));
         } finally {
           window.clearTimeout(timeoutId);
           if (token !== monthLookupToken) return;
@@ -1685,6 +1750,7 @@
             return;
           }
         }
+        rememberSubmittedMonth(previousSnapshot);
         resetCurrent({ confirm: false, toast: false });
         await showSendFarewell();
         returnToLauncherHome();

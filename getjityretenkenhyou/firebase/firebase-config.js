@@ -5,13 +5,12 @@
   "use strict";
 
   window.APP_FIREBASE_CONFIG = {
-    apiKey: "AIzaSyCvoqg9H2OZewp8nni1tKeOLJlXjO06s7w",
-    authDomain: "getujityretenkenhyou-a92f3.firebaseapp.com",
-    projectId: "getujityretenkenhyou-a92f3",
-    appId: "1:976212280398:web:2857aef38c5b11cdf46f1f",
-    messagingSenderId: "976212280398",
-    storageBucket: "getujityretenkenhyou-a92f3.firebasestorage.app",
-    measurementId: "G-2V09L51NDY"
+    apiKey: "AIzaSyAlpiGkwyoEW8U8X7HpK4XiqfwW8e_YOdQ",
+    authDomain: "getujityretenkenhyou.firebaseapp.com",
+    projectId: "getujityretenkenhyou",
+    appId: "1:818371379903:web:421a1b390e41a48d2cfc0a",
+    messagingSenderId: "818371379903",
+    storageBucket: "getujityretenkenhyou.firebasestorage.app"
   };
   window.APP_FIREBASE_SYNC_OPTIONS = {
     enabled: true,
