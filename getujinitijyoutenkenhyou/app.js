@@ -19,7 +19,7 @@ const INSPECTION_GUIDE_MESSAGE = `未入力日のみ表示しています。
 タップすると空欄 → レ → × → ▲と入力されます。　
 休みの日は日付を押して休みとしてください。もう一度押すと解除できます。
 一日分以上を入力したら上の送信ボタンを押してください。`;
-const APP_VERSION = "20260315-17";
+const APP_VERSION = "20260315-19";
 const MONTHLY_COMPLETE_IMAGE_SRC = "./icons/monthly-complete.png";
 const MONTHLY_COMPLETE_IMAGE_ALT = "今月分はすべて完了しました。明日もよろしくお願いします。";
 const sharedSettings = window.SharedLauncherSettings || null;
@@ -488,15 +488,17 @@ function createFirestoreStore(db, firestoreModule) {
     label: "Firebase Firestore",
     async listRecords(vehicle, driver) {
       const ref = collection(db, appSettings.collectionName);
-      const q = query(ref, where("vehicle", "==", vehicle), where("driver", "==", driver));
+      const q = query(ref, where("vehicle", "==", vehicle));
       const snapshot = await getDocs(q);
-      return snapshot.docs.map((snapshotDoc) => ({
-        ...normalizeRecord(snapshotDoc.data()),
-        _meta: {
-          docId: snapshotDoc.id,
-          updatedAtMs: toEpochMillis(snapshotDoc.data().updatedAt)
-        }
-      }));
+      return snapshot.docs
+        .filter((snapshotDoc) => matchesDriverRecord(snapshotDoc.data(), driver))
+        .map((snapshotDoc) => ({
+          ...normalizeRecord(snapshotDoc.data()),
+          _meta: {
+            docId: snapshotDoc.id,
+            updatedAtMs: toEpochMillis(snapshotDoc.data().updatedAt)
+          }
+        }));
     },
     async saveRecord(record) {
       const ref = doc(db, appSettings.collectionName, buildRecordId(record.month, record.vehicle, record.driver));
@@ -562,9 +564,7 @@ async function loadRecordMap(vehicle, driver) {
 
   return records.reduce((map, record) => {
     const existing = map[record.month];
-    if (!existing || shouldReplaceMonthRecord(existing, record)) {
-      map[record.month] = record;
-    }
+    map[record.month] = existing ? mergeMonthRecords(existing, record) : record;
     return map;
   }, {});
 }
@@ -970,7 +970,8 @@ function normalizeChecksByDay(checksByDay) {
 function normalizeDayChecks(values) {
   const normalized = {};
   for (const item of ALL_ITEMS) {
-    const value = values[item.id];
+    const rawValue = values[item.id];
+    const value = rawValue === "☓" ? "×" : rawValue;
     normalized[item.id] = CHECK_SEQUENCE.includes(value) ? value : "";
   }
   return normalized;
@@ -1310,6 +1311,46 @@ function visualizeLookupText(value) {
     .replace(/\u3000/g, "[wide-space]");
 }
 
+function normalizeDriverWhitespace(value) {
+  return String(value ?? "").trim().replace(/\s+/g, " ");
+}
+
+function stripDriverReading(value) {
+  return normalizeDriverWhitespace(value).replace(/\s*[（(][^）)]*[）)]\s*/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function normalizeDriverLookupKey(value) {
+  return stripDriverReading(value)
+    .normalize("NFKC")
+    .replace(/\s+/g, "")
+    .trim();
+}
+
+function matchesDriverRecord(record, driver) {
+  const targetKey = normalizeDriverLookupKey(driver);
+  if (!targetKey) {
+    return false;
+  }
+
+  const candidateKeys = new Set(
+    [
+      record?.driver,
+      record?.driverRaw,
+      record?.driverDisplay,
+      ...(Array.isArray(record?.driverAliases) ? record.driverAliases : [])
+    ]
+      .map((value) => normalizeDriverLookupKey(value))
+      .filter(Boolean)
+  );
+
+  const normalizedDriver = String(record?.driverNormalized || "").trim();
+  if (normalizedDriver) {
+    candidateKeys.add(normalizedDriver);
+  }
+
+  return candidateKeys.has(targetKey);
+}
+
 function shouldReplaceMonthRecord(currentRecord, nextRecord) {
   const currentUpdatedAt = Number(currentRecord?._meta?.updatedAtMs || 0);
   const nextUpdatedAt = Number(nextRecord?._meta?.updatedAtMs || 0);
@@ -1320,6 +1361,66 @@ function shouldReplaceMonthRecord(currentRecord, nextRecord) {
   const currentDocId = String(currentRecord?._meta?.docId || "");
   const nextDocId = String(nextRecord?._meta?.docId || "");
   return nextDocId.localeCompare(currentDocId) > 0;
+}
+
+function mergeMonthRecords(currentRecord, nextRecord) {
+  const preferred = shouldReplaceMonthRecord(currentRecord, nextRecord) ? nextRecord : currentRecord;
+  const secondary = preferred === currentRecord ? nextRecord : currentRecord;
+  const preferredRecord = normalizeRecord(preferred);
+  const secondaryRecord = normalizeRecord(secondary);
+  const allDays = new Set([
+    ...Object.keys(secondaryRecord.checksByDay || {}),
+    ...Object.keys(preferredRecord.checksByDay || {}),
+    ...Object.keys(secondaryRecord.maintenanceNotesByDay || {}),
+    ...Object.keys(preferredRecord.maintenanceNotesByDay || {})
+  ]);
+  const mergedChecksByDay = {};
+  const mergedMaintenanceNotesByDay = {};
+
+  allDays.forEach((day) => {
+    const mergedDayChecks = mergeDayChecks(
+      preferredRecord.checksByDay?.[day],
+      secondaryRecord.checksByDay?.[day]
+    );
+    if (hasAnyCheckValue(mergedDayChecks)) {
+      mergedChecksByDay[String(day)] = mergedDayChecks;
+    }
+
+    const preferredNote = String(preferredRecord.maintenanceNotesByDay?.[day] || "").trim();
+    const secondaryNote = String(secondaryRecord.maintenanceNotesByDay?.[day] || "").trim();
+    const mergedNote = preferredNote || secondaryNote;
+    if (mergedNote) {
+      mergedMaintenanceNotesByDay[String(day)] = mergedNote;
+    }
+  });
+
+  const mergedRecord = normalizeRecord({
+    ...secondaryRecord,
+    ...preferredRecord,
+    checksByDay: mergedChecksByDay,
+    holidayDays: [
+      ...secondaryRecord.holidayDays,
+      ...preferredRecord.holidayDays
+    ],
+    maintenanceNotesByDay: mergedMaintenanceNotesByDay
+  });
+
+  return {
+    ...mergedRecord,
+    _meta: preferred._meta
+  };
+}
+
+function mergeDayChecks(preferredValues, secondaryValues) {
+  const preferred = normalizeDayChecks(preferredValues || {});
+  const secondary = normalizeDayChecks(secondaryValues || {});
+  const merged = {};
+
+  for (const item of ALL_ITEMS) {
+    merged[item.id] = preferred[item.id] || secondary[item.id] || "";
+  }
+
+  return merged;
 }
 
 function toEpochMillis(value) {
