@@ -601,6 +601,22 @@
         saveSubmittedMonthCache();
         return true;
       };
+      const buildMonthAvailabilityFor = (source) => {
+        const lookupMonths = buildSelectableMonthKeys();
+        const signature = submittedMonthSignatureOf(source);
+        if (!signature) {
+          return {
+            submittedMonthKeys: [],
+            availableMonthKeys: lookupMonths.slice()
+          };
+        }
+
+        const submittedSet = new Set(normalizeSubmittedMonthArray(submittedMonthCache[signature]));
+        return {
+          submittedMonthKeys: lookupMonths.filter((monthKey) => submittedSet.has(monthKey)),
+          availableMonthKeys: lookupMonths.filter((monthKey) => !submittedSet.has(monthKey))
+        };
+      };
       const getCachedSubmittedMonthsForCurrent = () => {
         const signature = submittedMonthSignatureOf(current);
         if (!signature) return [];
@@ -1785,7 +1801,12 @@
           }
         }
         rememberSubmittedMonth(previousSnapshot);
+        const monthAvailability = buildMonthAvailabilityFor(previousSnapshot);
         resetCurrent({ confirm: false, toast: false });
+        if (monthAvailability.availableMonthKeys.length === 0) {
+          await showMonthlyCompleteAndReturnHome();
+          return;
+        }
         await showSendFarewell();
         returnToLauncherHome();
       }
