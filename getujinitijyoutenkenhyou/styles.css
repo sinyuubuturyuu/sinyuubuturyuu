@@ -151,6 +151,10 @@ h1 {
   margin-bottom: 16px;
 }
 
+.entry-target-month-section {
+  margin-bottom: 16px;
+}
+
 .field span,
 .field label {
   font-size: 0.92rem;
@@ -313,8 +317,15 @@ h1 {
   min-width: 0;
 }
 
+.session-month-label {
+  margin: 0 0 8px;
+  color: var(--muted);
+  font-size: 0.92rem;
+  font-weight: 700;
+}
+
 .session-summary h2 {
-  margin-top: 8px;
+  margin-top: 0;
   font-size: clamp(1.2rem, 2.8vw, 1.8rem);
   white-space: nowrap;
   overflow: hidden;

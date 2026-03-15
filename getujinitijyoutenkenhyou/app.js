@@ -18,7 +18,7 @@ const INSPECTION_GUIDE_MESSAGE = `未入力日のみ表示しています。
 タップすると空欄 → レ → × → ▲と入力されます。　
 休みの日は日付を押して休みとしてください。もう一度押すと解除できます。
 一日分以上を入力したら上の送信ボタンを押してください。`;
-const APP_VERSION = "20260315-9";
+const APP_VERSION = "20260315-13";
 const MONTHLY_COMPLETE_IMAGE_SRC = "./icons/monthly-complete.png";
 const MONTHLY_COMPLETE_IMAGE_ALT = "今月分はすべて完了しました。明日もよろしくお願いします。";
 const sharedSettings = window.SharedLauncherSettings || null;
@@ -99,6 +99,8 @@ const elements = {
   entryScreen: document.getElementById("entryScreen"),
   inspectionScreen: document.getElementById("inspectionScreen"),
   entryForm: document.getElementById("entryForm"),
+  entryTargetMonthSection: document.getElementById("entryTargetMonthSection"),
+  entryTargetMonthButtons: document.getElementById("entryTargetMonthButtons"),
   vehicleDisplay: document.getElementById("vehicleDisplay"),
   driverDisplay: document.getElementById("driverDisplay"),
   startButton: document.getElementById("startButton"),
@@ -113,9 +115,9 @@ const elements = {
   sendConfirmOkButton: document.getElementById("sendConfirmOkButton"),
   sendFarewell: document.getElementById("sendFarewell"),
   sendFarewellImage: document.getElementById("sendFarewellImage"),
-  targetMonthButtons: document.getElementById("targetMonthButtons"),
   entryStatus: document.getElementById("entryStatus"),
   inspectionStatus: document.getElementById("inspectionStatus"),
+  sessionMonthLabel: document.getElementById("sessionMonthLabel"),
   sessionTitle: document.getElementById("sessionTitle"),
   pendingSummary: document.getElementById("pendingSummary"),
   tableSection: document.getElementById("tableSection"),
@@ -147,6 +149,7 @@ const state = {
   draftsByMonth: {},
   holidayDraftByMonth: {},
   pendingSendPlan: null,
+  entrySelectionRequestId: 0,
   store: null,
   monthlyCompleteFlowRunning: false
 };
@@ -175,6 +178,7 @@ async function boot() {
   clearCompletionMarker();
   state.store = await createStore();
   refreshSharedSelection();
+  await refreshEntrySelectionState();
   elements.startButton.disabled = false;
 }
 
@@ -196,7 +200,7 @@ async function handleStart(event) {
   try {
     state.session = { vehicle, driver };
     const completedAllMonths = await refreshSessionState({
-      preferredMonth: getCurrentYearMonth(),
+      preferredMonth: state.targetMonth || getCurrentYearMonth(),
       showMonthlyCompleteOnEmpty: true
     });
     if (!completedAllMonths) {
@@ -224,6 +228,7 @@ function handleBack() {
   state.draftsByMonth = {};
   state.holidayDraftByMonth = {};
   refreshSharedSelection();
+  void refreshEntrySelectionState();
   switchScreen("entry");
 }
 
@@ -236,6 +241,7 @@ function handleVisibilityChange() {
     return;
   }
   refreshSharedSelection();
+  void refreshEntrySelectionState();
 }
 
 async function handleSend() {
@@ -403,11 +409,14 @@ function handleCheckTap(event) {
 }
 
 function selectTargetMonth(nextMonth) {
-  if (!state.session) return;
   if (!nextMonth || nextMonth === state.targetMonth) return;
   if (!state.availableMonths.includes(nextMonth)) return;
 
   state.targetMonth = nextMonth;
+  if (!state.session) {
+    renderEntryTargetMonthButtons();
+    return;
+  }
   syncDraftForTargetMonth();
   showInspectionGuide();
   renderInspectionScreen();
@@ -579,6 +588,45 @@ async function refreshSessionState(options = {}) {
   return false;
 }
 
+async function refreshEntrySelectionState() {
+  if (!state.store) {
+    return;
+  }
+
+  const vehicle = state.sharedSelection.vehicle;
+  const driver = state.sharedSelection.driver;
+  const requestId = state.entrySelectionRequestId + 1;
+  state.entrySelectionRequestId = requestId;
+
+  if (!vehicle || !driver) {
+    state.recordsByMonth = {};
+    state.availableMonths = [];
+    renderEntryTargetMonthButtons();
+    clearEntryStatus();
+    return;
+  }
+
+  try {
+    const recordsByMonth = await loadRecordMap(vehicle, driver);
+    if (requestId !== state.entrySelectionRequestId || state.session) {
+      return;
+    }
+
+    state.recordsByMonth = recordsByMonth;
+    syncTargetMonth(state.targetMonth || getCurrentYearMonth());
+    renderEntryTargetMonthButtons();
+    clearEntryStatus();
+  } catch (error) {
+    if (requestId !== state.entrySelectionRequestId || state.session) {
+      return;
+    }
+    state.recordsByMonth = {};
+    state.availableMonths = [];
+    renderEntryTargetMonthButtons();
+    setEntryStatus(`読込に失敗しました: ${error.message}`, true);
+  }
+}
+
 function syncDraftForTargetMonth() {
   const month = state.targetMonth;
   if (!month) {
@@ -601,7 +649,7 @@ function syncDraftForTargetMonth() {
 }
 
 function renderInspectionScreen() {
-  renderTargetMonthButtons();
+  elements.sessionMonthLabel.textContent = state.targetMonth ? `${formatMonth(state.targetMonth)}分` : "";
   elements.sessionTitle.textContent = `車番 ${state.session.vehicle} / 運転者 ${state.session.driver}`;
 
   if (!state.pendingDays.length) {
@@ -628,8 +676,18 @@ function renderInspectionScreen() {
   renderInspectionTable();
 }
 
-function renderTargetMonthButtons() {
-  elements.targetMonthButtons.innerHTML = "";
+function renderEntryTargetMonthButtons() {
+  if (!elements.entryTargetMonthSection || !elements.entryTargetMonthButtons) {
+    return;
+  }
+
+  elements.entryTargetMonthButtons.innerHTML = "";
+  const shouldShow = Boolean(state.sharedSelection.vehicle && state.sharedSelection.driver && state.availableMonths.length);
+  elements.entryTargetMonthSection.hidden = !shouldShow;
+
+  if (!shouldShow) {
+    return;
+  }
 
   state.availableMonths.forEach((month) => {
     const button = document.createElement("button");
@@ -641,7 +699,7 @@ function renderTargetMonthButtons() {
     button.addEventListener("click", () => {
       selectTargetMonth(month);
     });
-    elements.targetMonthButtons.append(button);
+    elements.entryTargetMonthButtons.append(button);
   });
 }
 
