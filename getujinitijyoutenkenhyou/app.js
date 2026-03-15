@@ -18,7 +18,7 @@ const INSPECTION_GUIDE_MESSAGE = `未入力日のみ表示しています。
 タップすると空欄 → レ → × → ▲と入力されます。　
 休みの日は日付を押して休みとしてください。もう一度押すと解除できます。
 一日分以上を入力したら上の送信ボタンを押してください。`;
-const APP_VERSION = "20260312-4";
+const APP_VERSION = "20260315-7";
 const MONTHLY_COMPLETE_IMAGE_SRC = "./icons/monthly-complete.png";
 const MONTHLY_COMPLETE_IMAGE_ALT = "今月分はすべて完了しました。明日もよろしくお願いします。";
 const sharedSettings = window.SharedLauncherSettings || null;
@@ -106,6 +106,9 @@ const elements = {
   sendButton: document.getElementById("sendButton"),
   sendConfirmDialog: document.getElementById("sendConfirmDialog"),
   sendConfirmMessage: document.getElementById("sendConfirmMessage"),
+  sendConfirmNoteField: document.getElementById("sendConfirmNoteField"),
+  sendConfirmNoteInput: document.getElementById("sendConfirmNoteInput"),
+  sendConfirmNoteStatus: document.getElementById("sendConfirmNoteStatus"),
   sendConfirmCancelButton: document.getElementById("sendConfirmCancelButton"),
   sendConfirmOkButton: document.getElementById("sendConfirmOkButton"),
   sendFarewell: document.getElementById("sendFarewell"),
@@ -143,6 +146,7 @@ const state = {
   pendingDays: [],
   draftsByMonth: {},
   holidayDraftByMonth: {},
+  pendingSendPlan: null,
   store: null,
   monthlyCompleteFlowRunning: false
 };
@@ -155,9 +159,9 @@ elements.backButton.addEventListener("click", handleBack);
 elements.sendButton.addEventListener("click", handleSend);
 elements.sendConfirmCancelButton?.addEventListener("click", closeSendConfirmDialog);
 elements.sendConfirmOkButton?.addEventListener("click", () => {
-  closeSendConfirmDialog();
-  void submitSend();
+  void handleSendConfirmOk();
 });
+elements.sendConfirmDialog?.addEventListener("close", resetSendConfirmState);
 elements.tableHead.addEventListener("click", handleDayHeadTap);
 elements.tableBody.addEventListener("click", handleCheckTap);
 document.addEventListener("visibilitychange", handleVisibilityChange);
@@ -240,14 +244,20 @@ async function handleSend() {
     return;
   }
 
-  if (!elements.sendConfirmDialog || !elements.sendConfirmMessage) {
+  if (!elements.sendConfirmDialog || !elements.sendConfirmMessage || !elements.sendConfirmNoteInput) {
+    const maintenanceNote = promptMaintenanceNoteIfNeeded(sendPlan);
+    if (maintenanceNote === null) {
+      return;
+    }
     if (window.confirm(buildSendConfirmMessage(sendPlan))) {
-      await submitSend();
+      await submitSend(sendPlan, maintenanceNote);
     }
     return;
   }
 
+  state.pendingSendPlan = sendPlan;
   elements.sendConfirmMessage.textContent = buildSendConfirmMessage(sendPlan);
+  prepareSendConfirmDialog(sendPlan);
   if (typeof elements.sendConfirmDialog.showModal === "function") {
     elements.sendConfirmDialog.showModal();
   } else {
@@ -255,13 +265,30 @@ async function handleSend() {
   }
 }
 
-async function submitSend() {
-  const sendPlan = getSendPlan();
+async function handleSendConfirmOk() {
+  const sendPlan = state.pendingSendPlan || getSendPlan();
   if (!sendPlan) {
+    closeSendConfirmDialog();
     return;
   }
 
-  const { month, monthDraft, completeDays, payload } = sendPlan;
+  const maintenanceNote = readMaintenanceNoteFromDialog(sendPlan);
+  if (maintenanceNote === null) {
+    return;
+  }
+
+  closeSendConfirmDialog();
+  await submitSend(sendPlan, maintenanceNote);
+}
+
+async function submitSend(sendPlan = null, maintenanceNote = "") {
+  const activeSendPlan = sendPlan || getSendPlan();
+  if (!activeSendPlan) {
+    return;
+  }
+
+  const { month, monthDraft, completeDays, payload: basePayload, maintenanceDays } = activeSendPlan;
+  const payload = applyMaintenanceNoteToPayload(basePayload, maintenanceDays, maintenanceNote);
   toggleBusy(elements.sendButton, true, "送信中...");
 
   try {
@@ -313,6 +340,7 @@ function getSendPlan() {
 
   const nextChecksByDay = omitCheckDays(record.checksByDay, completeDays);
   const nextHolidayDays = new Set(record.holidayDays);
+  const maintenanceDays = [];
   for (const day of completeDays) {
     const dayKey = String(day);
     if (isHolidaySelected(month, dayKey)) {
@@ -321,6 +349,9 @@ function getSendPlan() {
       const dayChecks = normalizeDayChecks(monthDraft[dayKey] || createEmptyDayChecks());
       nextChecksByDay[dayKey] = dayChecks;
       nextHolidayDays.delete(day);
+      if (hasMaintenanceMark(dayChecks)) {
+        maintenanceDays.push(day);
+      }
     }
   }
 
@@ -329,18 +360,23 @@ function getSendPlan() {
     vehicle: state.session.vehicle,
     driver: state.session.driver,
     checksByDay: nextChecksByDay,
-    holidayDays: [...nextHolidayDays]
+    holidayDays: [...nextHolidayDays],
+    maintenanceNotesByDay: record.maintenanceNotesByDay
   });
 
   return {
     month,
     monthDraft,
     completeDays,
+    maintenanceDays,
     payload
   };
 }
 
 function buildSendConfirmMessage(sendPlan) {
+  if (sendPlan?.maintenanceDays?.length) {
+    return "入力内容に間違いがなければ、整備内容を入力してOKを押してください。";
+  }
   return "入力内容に間違いがなければ、OKを押してください。";
 }
 
@@ -701,6 +737,7 @@ function closeSendConfirmDialog() {
     elements.sendConfirmDialog.close();
   } else {
     elements.sendConfirmDialog.removeAttribute("open");
+    resetSendConfirmState();
   }
 }
 
@@ -844,9 +881,11 @@ function normalizeRecord(record) {
   const legacyHolidayDays = collectLegacyHolidayDays(record.checksByDay || {});
   const holidayDays = normalizeHolidayDays([...(record.holidayDays || []), ...legacyHolidayDays], month);
   const checksByDay = normalizeChecksByDay(record.checksByDay || {});
+  const maintenanceNotesByDay = normalizeMaintenanceNotesByDay(record.maintenanceNotesByDay || {}, month);
 
   for (const day of holidayDays) {
     delete checksByDay[String(day)];
+    delete maintenanceNotesByDay[String(day)];
   }
 
   return {
@@ -854,7 +893,8 @@ function normalizeRecord(record) {
     vehicle: record.vehicle || "",
     driver: record.driver || "",
     checksByDay,
-    holidayDays
+    holidayDays,
+    maintenanceNotesByDay
   };
 }
 
@@ -886,12 +926,29 @@ function normalizeHolidayDays(holidayDays, month) {
     .sort((left, right) => left - right);
 }
 
+function normalizeMaintenanceNotesByDay(notesByDay, month) {
+  const lastDay = getDaysInMonth(month);
+  return Object.entries(notesByDay || {}).reduce((result, [day, note]) => {
+    const dayNumber = Number(day);
+    const normalizedNote = String(note || "").trim();
+    if (!Number.isInteger(dayNumber) || dayNumber < 1 || dayNumber > lastDay || !normalizedNote) {
+      return result;
+    }
+    result[String(dayNumber)] = normalizedNote;
+    return result;
+  }, {});
+}
+
 function hasAnyCheckValue(values) {
   return Object.values(normalizeDayChecks(values || {})).some((value) => value !== "");
 }
 
 function isDayComplete(values) {
   return Object.values(normalizeDayChecks(values || {})).every((value) => value !== "");
+}
+
+function hasMaintenanceMark(values) {
+  return Object.values(normalizeDayChecks(values || {})).includes("▲");
 }
 
 function setHolidaySelected(month, day, selected) {
@@ -963,6 +1020,116 @@ function readLocalStore() {
   } catch {
     return { records: {} };
   }
+}
+
+function applyMaintenanceNoteToPayload(record, maintenanceDays, maintenanceNote) {
+  const nextRecord = normalizeRecord(record);
+  if (!maintenanceDays?.length) {
+    return nextRecord;
+  }
+
+  const trimmedNote = String(maintenanceNote || "").trim();
+  if (!trimmedNote) {
+    throw new Error("整備内容を入力してください。");
+  }
+
+  const nextNotesByDay = {
+    ...(nextRecord.maintenanceNotesByDay || {})
+  };
+
+  for (const day of maintenanceDays) {
+    nextNotesByDay[String(day)] = trimmedNote;
+  }
+
+  return normalizeRecord({
+    ...nextRecord,
+    maintenanceNotesByDay: nextNotesByDay
+  });
+}
+
+function prepareSendConfirmDialog(sendPlan) {
+  clearSendConfirmNoteStatus();
+  if (!elements.sendConfirmNoteField || !elements.sendConfirmNoteInput) {
+    return;
+  }
+
+  const requiresMaintenanceNote = Boolean(sendPlan?.maintenanceDays?.length);
+  elements.sendConfirmNoteField.hidden = !requiresMaintenanceNote;
+  elements.sendConfirmNoteInput.value = "";
+
+  if (!requiresMaintenanceNote) {
+    return;
+  }
+
+  window.requestAnimationFrame(() => {
+    elements.sendConfirmNoteInput?.focus();
+    elements.sendConfirmNoteInput?.setSelectionRange(0, 0);
+  });
+}
+
+function readMaintenanceNoteFromDialog(sendPlan) {
+  clearSendConfirmNoteStatus();
+  if (!sendPlan?.maintenanceDays?.length) {
+    return "";
+  }
+
+  if (!elements.sendConfirmNoteInput) {
+    return promptMaintenanceNoteIfNeeded(sendPlan);
+  }
+
+  const note = elements.sendConfirmNoteInput.value.trim();
+  if (note) {
+    return note;
+  }
+
+  setSendConfirmNoteStatus("整備内容を入力してください。");
+  elements.sendConfirmNoteInput.focus();
+  return null;
+}
+
+function promptMaintenanceNoteIfNeeded(sendPlan) {
+  if (!sendPlan?.maintenanceDays?.length) {
+    return "";
+  }
+
+  while (true) {
+    const note = window.prompt("整備したことを記録してください。", "");
+    if (note === null) {
+      return null;
+    }
+    const trimmedNote = note.trim();
+    if (trimmedNote) {
+      return trimmedNote;
+    }
+    window.alert("整備内容を入力してください。");
+  }
+}
+
+function resetSendConfirmState() {
+  state.pendingSendPlan = null;
+  clearSendConfirmNoteStatus();
+  if (elements.sendConfirmNoteField) {
+    elements.sendConfirmNoteField.hidden = true;
+  }
+  if (elements.sendConfirmNoteInput) {
+    elements.sendConfirmNoteInput.value = "";
+  }
+}
+
+function setSendConfirmNoteStatus(message) {
+  if (!elements.sendConfirmNoteStatus) {
+    return;
+  }
+  elements.sendConfirmNoteStatus.hidden = !message;
+  setStatus(elements.sendConfirmNoteStatus, message, true, false);
+}
+
+function clearSendConfirmNoteStatus() {
+  if (!elements.sendConfirmNoteStatus) {
+    return;
+  }
+  elements.sendConfirmNoteStatus.hidden = true;
+  setStatus(elements.sendConfirmNoteStatus, "", false, false);
 }
 
 
