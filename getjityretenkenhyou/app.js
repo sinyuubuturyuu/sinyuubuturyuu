@@ -768,12 +768,10 @@
 
       async function refreshAvailableMonths() {
         const lookupMonths = buildSelectableMonthKeys();
-        const cachedSubmittedSet = new Set(
-          getCachedSubmittedMonthsForCurrent().filter((monthKey) => lookupMonths.includes(monthKey))
-        );
-        availableMonthKeys = lookupMonths.filter((monthKey) => !cachedSubmittedSet.has(monthKey));
-        submittedMonthKeys = lookupMonths.filter((monthKey) => cachedSubmittedSet.has(monthKey));
+        availableMonthKeys = lookupMonths.slice();
+        submittedMonthKeys = [];
         monthSelectionError = "";
+        let firebaseLookupConfirmed = false;
 
         if (!hasBasicSelectionTarget()) {
           monthSelectionLoading = false;
@@ -786,6 +784,7 @@
         const cloudSync = window.FirebaseCloudSync;
         if (!cloudSync || typeof cloudSync.listSubmittedMonthsForPayload !== "function") {
           monthSelectionLoading = false;
+          monthSelectionError = "Firebaseの確認が完了するまで完了判定は行いません。";
           const changed = autoSelectSingleCurrentMonthIfNeeded() || clearMonthSelectionIfNeeded();
           if (changed) saveCurrent();
           renderAll();
@@ -813,23 +812,23 @@
           if (token !== monthLookupToken) return;
 
           if (result && result.ok) {
-            const submittedSet = new Set(cachedSubmittedSet);
-            (Array.isArray(result.months) ? result.months : []).forEach((monthKey) => {
-              if (lookupMonths.includes(monthKey)) submittedSet.add(monthKey);
-            });
+            const submittedSet = new Set(
+              (Array.isArray(result.months) ? result.months : []).filter((monthKey) => lookupMonths.includes(monthKey))
+            );
             submittedMonthKeys = lookupMonths.filter((monthKey) => submittedSet.has(monthKey));
             availableMonthKeys = lookupMonths.filter((monthKey) => !submittedSet.has(monthKey));
+            firebaseLookupConfirmed = true;
           } else {
             monthSelectionError = "送信済み月の確認に失敗したため、対象月をすべて表示しています。";
-            submittedMonthKeys = lookupMonths.filter((monthKey) => cachedSubmittedSet.has(monthKey));
-            availableMonthKeys = lookupMonths.filter((monthKey) => !cachedSubmittedSet.has(monthKey));
+            submittedMonthKeys = [];
+            availableMonthKeys = lookupMonths.slice();
           }
         } catch (error) {
           if (token !== monthLookupToken) return;
           console.warn("Failed to load available months:", error);
           monthSelectionError = "送信済み月の確認に失敗したため、対象月をすべて表示しています。";
-          submittedMonthKeys = lookupMonths.filter((monthKey) => cachedSubmittedSet.has(monthKey));
-          availableMonthKeys = lookupMonths.filter((monthKey) => !cachedSubmittedSet.has(monthKey));
+          submittedMonthKeys = [];
+          availableMonthKeys = lookupMonths.slice();
         } finally {
           window.clearTimeout(timeoutId);
           if (token !== monthLookupToken) return;
@@ -837,7 +836,7 @@
           const changed = autoSelectSingleCurrentMonthIfNeeded() || clearMonthSelectionIfNeeded();
           if (changed) saveCurrent();
           renderAll();
-          if (!monthSelectionError && hasBasicSelectionTarget() && availableMonthKeys.length === 0) {
+          if (firebaseLookupConfirmed && !monthSelectionError && hasBasicSelectionTarget() && availableMonthKeys.length === 0) {
             void showMonthlyCompleteAndReturnHome();
           }
         }
