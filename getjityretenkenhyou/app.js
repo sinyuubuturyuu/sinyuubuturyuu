@@ -678,6 +678,34 @@
         return true;
       }
 
+      function autoSelectSingleCurrentMonthIfNeeded() {
+        if (!hasBasicSelectionTarget()) return false;
+        if (availableMonthKeys.length !== 1) return false;
+        const onlyMonth = normalizeMonthKey(availableMonthKeys[0]);
+        const currentMonth = currentMonthKey();
+        if (!onlyMonth || onlyMonth !== currentMonth) return false;
+
+        const nextInspectionDate = normalizeInspectionDateForMonth(today(), currentMonth);
+        const hasSameTarget = normalizeMonthKey(current.targetMonth) === currentMonth;
+        const hasSameDate = String(current.inspectionDate || "").trim() === nextInspectionDate;
+        const isConfirmed = current.inspectionDateConfirmed === true;
+        if (hasSameTarget && hasSameDate && isConfirmed) {
+          return false;
+        }
+
+        current.targetMonth = currentMonth;
+        current.inspectionDate = nextInspectionDate;
+        current.inspectionDateConfirmed = true;
+        return true;
+      }
+
+      function shouldHideSingleCurrentMonthStatus() {
+        if (availableMonthKeys.length !== 1) return false;
+        const onlyMonth = normalizeMonthKey(availableMonthKeys[0]);
+        if (!onlyMonth || onlyMonth !== currentMonthKey()) return false;
+        return normalizeMonthKey(current.targetMonth) === onlyMonth;
+      }
+
       function renderMonthSelection() {
         const selectedMonth = normalizeMonthKey(current.targetMonth);
         const confirmed = current.inspectionDateConfirmed
@@ -710,6 +738,10 @@
         }
         if (!availableMonthKeys.length) {
           el.monthSelectionStatus.textContent = "表示対象の未入力月はありません。";
+          return;
+        }
+        if (shouldHideSingleCurrentMonthStatus()) {
+          el.monthSelectionStatus.textContent = "";
           return;
         }
         if (confirmed) {
@@ -745,7 +777,8 @@
 
         if (!hasBasicSelectionTarget()) {
           monthSelectionLoading = false;
-          if (clearMonthSelectionIfNeeded()) saveCurrent();
+          const changed = autoSelectSingleCurrentMonthIfNeeded() || clearMonthSelectionIfNeeded();
+          if (changed) saveCurrent();
           renderAll();
           return;
         }
@@ -753,7 +786,8 @@
         const cloudSync = window.FirebaseCloudSync;
         if (!cloudSync || typeof cloudSync.listSubmittedMonthsForPayload !== "function") {
           monthSelectionLoading = false;
-          if (clearMonthSelectionIfNeeded()) saveCurrent();
+          const changed = autoSelectSingleCurrentMonthIfNeeded() || clearMonthSelectionIfNeeded();
+          if (changed) saveCurrent();
           renderAll();
           return;
         }
@@ -800,7 +834,8 @@
           window.clearTimeout(timeoutId);
           if (token !== monthLookupToken) return;
           monthSelectionLoading = false;
-          if (clearMonthSelectionIfNeeded()) saveCurrent();
+          const changed = autoSelectSingleCurrentMonthIfNeeded() || clearMonthSelectionIfNeeded();
+          if (changed) saveCurrent();
           renderAll();
           if (!monthSelectionError && hasBasicSelectionTarget() && availableMonthKeys.length === 0) {
             void showMonthlyCompleteAndReturnHome();

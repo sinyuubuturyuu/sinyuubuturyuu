@@ -8,14 +8,13 @@ const CHECK_SEQUENCE = ["", "レ", "×", "▲"];
 const HOLIDAY_CHECK = "休";
 const WEEKDAYS = ["日", "月", "火", "水", "木", "金", "土"];
 const STORAGE_NAMESPACE = "monthly_inspection_app_v1";
-const COMPLETION_MARKER_KEY = "monthly_inspection_completion_marker_v1";
 const MIN_SELECTABLE_MONTH = "2026-01";
 const THEME_COLORS = Object.freeze({
   light: "#f3f5f8",
   dark: "#0f1722"
 });
 const FIREBASE_REQUIRED_KEYS = ["apiKey", "authDomain", "projectId", "appId"];
-const INSPECTION_GUIDE_MESSAGE = "空欄 → レ → × → ▲　未入力日のみ表示しています。休みの日は日付を押すとその日を休みとして色付けできます。もう一度押すと解除できます。上の送信ボタンで保存します。";
+const INSPECTION_GUIDE_MESSAGE = "未入力日のみ表示しています。タップすると空欄 → レ → × → ▲と入力されます。休みの日は日付を押して休みとしてください。もう一度押すと解除できます。一日分以上を入力したら上の送信ボタンを押してください。";
 const APP_VERSION = "20260312-4";
 const MONTHLY_COMPLETE_IMAGE_SRC = "./icons/monthly-complete.png";
 const MONTHLY_COMPLETE_IMAGE_ALT = "今月分はすべて完了しました。明日もよろしくお願いします。";
@@ -166,6 +165,7 @@ boot().catch((error) => {
 
 async function boot() {
   await clearLegacyCaches();
+  clearCompletionMarker();
   state.store = await createStore();
   refreshSharedSelection();
   elements.startButton.disabled = false;
@@ -188,13 +188,14 @@ async function handleStart(event) {
 
   try {
     state.session = { vehicle, driver };
-    state.recordsByMonth = await loadRecordMap(vehicle, driver);
-    state.draftsByMonth = {};
-    state.holidayDraftByMonth = {};
-    syncTargetMonth(getCurrentYearMonth());
-    renderInspectionScreen();
-    switchScreen("inspection");
-    setInspectionStatus(INSPECTION_GUIDE_MESSAGE, false, true);
+    const completedAllMonths = await refreshSessionState({
+      preferredMonth: getCurrentYearMonth(),
+      showMonthlyCompleteOnEmpty: true
+    });
+    if (!completedAllMonths) {
+      switchScreen("inspection");
+      setInspectionStatus(INSPECTION_GUIDE_MESSAGE, false, true);
+    }
   } catch (error) {
     setEntryStatus(`読込に失敗しました: ${error.message}`, true);
   } finally {
@@ -272,10 +273,15 @@ async function submitSend() {
       delete state.draftsByMonth[month];
     }
     dropHolidayDraftDays(month, completeDays);
-    persistCompletionMarker(completeDays);
+    const completedAllMonths = await refreshSessionState({
+      preferredMonth: month,
+      showMonthlyCompleteOnEmpty: true
+    });
 
-    await showSendFarewell();
-    returnToLauncherHome();
+    if (!completedAllMonths) {
+      await showSendFarewell();
+      returnToLauncherHome();
+    }
   } catch (error) {
     setInspectionStatus(`送信に失敗しました: ${error.message}`, true);
   } finally {
@@ -298,7 +304,7 @@ function getSendPlan() {
   });
 
   if (!completeDays.length) {
-    setInspectionStatus("1日分すべて入力できた日付がありません。未完了の日はそのまま残ります。", true);
+    window.alert("1日分すべて入力できた日付がありません。未完了の日はそのまま残ります。");
     return null;
   }
 
@@ -361,7 +367,7 @@ function selectTargetMonth(nextMonth) {
 
   state.targetMonth = nextMonth;
   syncDraftForTargetMonth();
-  clearInspectionStatus();
+  showInspectionGuide();
   renderInspectionScreen();
 }
 
@@ -380,7 +386,7 @@ async function handleDayHeadTap(event) {
   if (isHolidaySelected(month, dayKey)) {
     setHolidaySelected(month, dayKey, false);
     renderInspectionTable();
-    setInspectionStatus(`${formatMonth(month)} の ${day}日の休み指定を解除しました。`, false, true);
+    showInspectionGuide();
     return;
   }
 
@@ -391,7 +397,7 @@ async function handleDayHeadTap(event) {
 
   setHolidaySelected(month, dayKey, true);
   renderInspectionTable();
-  setInspectionStatus(`${formatMonth(month)} の ${day}日を休みとしてマークしました。送信で保存されます。`, false, true);
+  showInspectionGuide();
 }
 
 async function createStore() {
@@ -511,6 +517,26 @@ async function loadRecordMap(vehicle, driver) {
   }, {});
 }
 
+async function refreshSessionState(options = {}) {
+  if (!state.session || !state.store) {
+    return false;
+  }
+
+  const preferredMonth = options.preferredMonth || state.targetMonth || getCurrentYearMonth();
+  state.recordsByMonth = await loadRecordMap(state.session.vehicle, state.session.driver);
+  state.draftsByMonth = {};
+  state.holidayDraftByMonth = {};
+  syncTargetMonth(preferredMonth);
+
+  if (options.showMonthlyCompleteOnEmpty && !state.availableMonths.length) {
+    await showMonthlyCompleteAndReturnHome();
+    return true;
+  }
+
+  renderInspectionScreen();
+  return false;
+}
+
 function syncDraftForTargetMonth() {
   const month = state.targetMonth;
   if (!month) {
@@ -552,9 +578,9 @@ function renderInspectionScreen() {
     return;
   }
 
-  elements.pendingSummary.textContent = buildPendingSummary();
-  elements.pendingSummary.hidden = false;
-  elements.pendingSummary.setAttribute("aria-hidden", "false");
+  elements.pendingSummary.textContent = "";
+  elements.pendingSummary.hidden = true;
+  elements.pendingSummary.setAttribute("aria-hidden", "true");
   elements.emptyState.hidden = true;
   elements.tableSection.hidden = false;
   renderInspectionTable();
@@ -936,27 +962,6 @@ function readLocalStore() {
   }
 }
 
-function persistCompletionMarker(completeDays) {
-  const today = new Date();
-  const todayMonth = toYearMonth(today.getFullYear(), today.getMonth() + 1);
-  const todayDay = today.getDate();
-  const completedToday = Array.isArray(completeDays) && completeDays.some((day) => Number(day) === todayDay);
-
-  if (!completedToday || state.targetMonth !== todayMonth || !state.session) {
-    return;
-  }
-
-  try {
-    localStorage.setItem(COMPLETION_MARKER_KEY, JSON.stringify({
-      date: `${todayMonth}-${String(todayDay).padStart(2, "0")}`,
-      vehicle: state.session.vehicle || "",
-      driver: state.session.driver || "",
-      updatedAt: new Date().toISOString(),
-    }));
-  } catch {
-    // noop
-  }
-}
 
 function hasFirebaseConfig() {
   return FIREBASE_REQUIRED_KEYS.every((key) => {
@@ -1043,6 +1048,10 @@ function clearEntryStatus() {
 
 function setInspectionStatus(message, isError = false, isSuccess = false) {
   setStatus(elements.inspectionStatus, message, isError, isSuccess);
+}
+
+function showInspectionGuide() {
+  setInspectionStatus(INSPECTION_GUIDE_MESSAGE, false, true);
 }
 
 function clearInspectionStatus() {
@@ -1144,13 +1153,21 @@ function getSelectableMonths() {
   let cursor = getSelectableMonthStart(currentMonth);
 
   while (compareYearMonth(cursor, currentMonth) <= 0) {
-    if (cursor === currentMonth || getPendingDays(cursor).length > 0) {
+    if (getPendingDays(cursor).length > 0) {
       months.push(cursor);
     }
     cursor = addMonths(cursor, 1);
   }
 
   return months;
+}
+
+function clearCompletionMarker() {
+  try {
+    localStorage.removeItem("monthly_inspection_completion_marker_v1");
+  } catch {
+    // noop
+  }
 }
 
 function getSelectableMonthStart(currentMonth) {
@@ -1217,3 +1234,4 @@ function canAccessServiceWorkerApis() {
 
   return window.location.protocol === "http:" || window.location.protocol === "https:";
 }
+
