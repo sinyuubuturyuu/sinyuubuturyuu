@@ -1,4 +1,4 @@
-const APP_VERSION = "20260315-7";
+const APP_VERSION = "20260315-9";
 const CACHE_NAME = `monthly-inspection-shell-${APP_VERSION}`;
 const APP_SHELL = [
   "./",

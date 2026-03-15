@@ -18,7 +18,7 @@ const INSPECTION_GUIDE_MESSAGE = `未入力日のみ表示しています。
 タップすると空欄 → レ → × → ▲と入力されます。　
 休みの日は日付を押して休みとしてください。もう一度押すと解除できます。
 一日分以上を入力したら上の送信ボタンを押してください。`;
-const APP_VERSION = "20260315-7";
+const APP_VERSION = "20260315-9";
 const MONTHLY_COMPLETE_IMAGE_SRC = "./icons/monthly-complete.png";
 const MONTHLY_COMPLETE_IMAGE_ALT = "今月分はすべて完了しました。明日もよろしくお願いします。";
 const sharedSettings = window.SharedLauncherSettings || null;
@@ -249,14 +249,17 @@ async function handleSend() {
     if (maintenanceNote === null) {
       return;
     }
-    if (window.confirm(buildSendConfirmMessage(sendPlan))) {
+    const confirmMessage = buildSendConfirmMessage(sendPlan);
+    if (!confirmMessage || window.confirm(confirmMessage)) {
       await submitSend(sendPlan, maintenanceNote);
     }
     return;
   }
 
   state.pendingSendPlan = sendPlan;
-  elements.sendConfirmMessage.textContent = buildSendConfirmMessage(sendPlan);
+  const confirmMessage = buildSendConfirmMessage(sendPlan);
+  elements.sendConfirmMessage.textContent = confirmMessage;
+  elements.sendConfirmMessage.hidden = !confirmMessage;
   prepareSendConfirmDialog(sendPlan);
   if (typeof elements.sendConfirmDialog.showModal === "function") {
     elements.sendConfirmDialog.showModal();
@@ -375,7 +378,7 @@ function getSendPlan() {
 
 function buildSendConfirmMessage(sendPlan) {
   if (sendPlan?.maintenanceDays?.length) {
-    return "入力内容に間違いがなければ、整備内容を入力してOKを押してください。";
+    return "";
   }
   return "入力内容に間違いがなければ、OKを押してください。";
 }
@@ -1108,6 +1111,9 @@ function promptMaintenanceNoteIfNeeded(sendPlan) {
 function resetSendConfirmState() {
   state.pendingSendPlan = null;
   clearSendConfirmNoteStatus();
+  if (elements.sendConfirmMessage) {
+    elements.sendConfirmMessage.hidden = false;
+  }
   if (elements.sendConfirmNoteField) {
     elements.sendConfirmNoteField.hidden = true;
   }

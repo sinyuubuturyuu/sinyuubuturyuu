@@ -8,9 +8,9 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   <meta name="apple-mobile-web-app-title" content="月次点検" />
-  <link rel="manifest" href="./manifest.webmanifest?v=20260315-7" />
-  <link rel="apple-touch-icon" sizes="180x180" href="./icons/apple-touch-icon.png?v=20260315-7" />
-  <link rel="stylesheet" href="./styles.css?v=20260315-7" />
+  <link rel="manifest" href="./manifest.webmanifest?v=20260315-9" />
+  <link rel="apple-touch-icon" sizes="180x180" href="./icons/apple-touch-icon.png?v=20260315-9" />
+  <link rel="stylesheet" href="./styles.css?v=20260315-9" />
 </head>
 <body>
   <main class="app-shell">
@@ -95,9 +95,9 @@
           <p id="sendConfirmMessage">入力内容に間違いがないか確認してください。</p>
         </div>
         <div id="sendConfirmNoteField" class="field" hidden>
-          <label for="sendConfirmNoteInput">整備したことを記録してください。</label>
           <textarea
             id="sendConfirmNoteInput"
+            aria-label="整備内容"
             rows="4"
             placeholder="整備した内容を入力してください。"
           ></textarea>
@@ -124,8 +124,8 @@
 
   <script src="../shared-settings.js"></script>
   <script src="../shared-no-zoom.js"></script>
-  <script src="./firebase-config.js?v=20260315-7"></script>
-  <script src="./app.js?v=20260315-7"></script>
+  <script src="./firebase-config.js?v=20260315-9"></script>
+  <script src="./app.js?v=20260315-9"></script>
 </body>
 </html>
 
