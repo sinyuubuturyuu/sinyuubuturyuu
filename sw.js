@@ -1,15 +1,15 @@
-const CACHE_NAME = "sinyuubuturyuu-launcher-v6";
+const CACHE_NAME = "sinyuubuturyuu-launcher-v7";
 const APP_SHELL = [
   "./",
   "./index.html",
   "./launcher.css",
   "./launcher.js",
   "./manifest.webmanifest",
-  "./sinyuubuturyuu-icon.png",
-  "./apple-touch-icon.png",
-  "./icon-192.png",
-  "./icon-512.png",
-  "./icon-512-maskable.png",
+  "./icon-sinyuubuturyuu-pc.png",
+  "./apple-touch-icon-launcher-v2.png",
+  "./icon-192-launcher-v2.png",
+  "./icon-512-launcher-v2.png",
+  "./icon-512-maskable-launcher-v2.png",
 ];
 const NETWORK_FIRST_PATH_SUFFIXES = [
   "/index.html",
