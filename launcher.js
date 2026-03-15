@@ -22,6 +22,26 @@ const REFERENCE_DRIVER_SETTINGS_DOC = Object.freeze({
   collection: "monthly_tire_autosave",
   id: "monthly_tire_company_settings_backup_drivers_slot1",
 });
+const REFERENCE_SYAINMEIBO_DOC = Object.freeze({
+  collection: "monthly_tire_autosave",
+  id: "syainmeibo",
+});
+const REFERENCE_SOURCE_KIND = Object.freeze({
+  VEHICLES: "vehicles",
+  DRIVERS: "drivers",
+});
+const REFERENCE_SOURCE_CONFIG = Object.freeze({
+  [REFERENCE_SOURCE_KIND.VEHICLES]: Object.freeze({
+    fieldNames: Object.freeze(["車両番号", "車番", "vehicles", "vehicleNumbers", "values"]),
+    primaryFieldName: "車両番号",
+    metaFieldName: "vehiclesMeta",
+  }),
+  [REFERENCE_SOURCE_KIND.DRIVERS]: Object.freeze({
+    fieldNames: Object.freeze(["乗務員名", "乗務員", "drivers", "driverNames", "values"]),
+    primaryFieldName: "乗務員名",
+    metaFieldName: "driversMeta",
+  }),
+});
 const MONTHLY_COMPLETE_IMAGE_ALT = "Monthly inspection complete.";
 const DAILY_INSPECTION_COMPLETE_IMAGE_SRC = "./getujinitijyoutenkenhyou/icons/monthly-complete.png";
 const DAILY_INSPECTION_COMPLETE_IMAGE_ALT = "Daily inspection complete for this month.";
@@ -345,6 +365,33 @@ function getStringArray(source, fieldName = "values") {
   return source[fieldName].map((value) => String(value ?? "").trim()).filter(Boolean);
 }
 
+function getStringArrayFromFieldNames(source, fieldNames = ["values"]) {
+  for (const fieldName of fieldNames) {
+    const values = getStringArray(source, fieldName);
+    if (values.length) {
+      return values;
+    }
+  }
+  return [];
+}
+
+function extractReferenceOptionsFromSyainmeibo(source) {
+  return {
+    vehicles: sortReferenceRows(
+      getStringArrayFromFieldNames(
+        source,
+        REFERENCE_SOURCE_CONFIG[REFERENCE_SOURCE_KIND.VEHICLES].fieldNames
+      )
+    ),
+    drivers: sharedSettings.normalizeDrivers(
+      getStringArrayFromFieldNames(
+        source,
+        REFERENCE_SOURCE_CONFIG[REFERENCE_SOURCE_KIND.DRIVERS].fieldNames
+      )
+    ),
+  };
+}
+
 function sortReferenceRows(rows, labelFor = (value) => String(value || "")) {
   return [...rows].sort((left, right) => labelFor(left).localeCompare(labelFor(right), "ja"));
 }
@@ -391,11 +438,8 @@ async function ensureReferenceSettingsAuth(runtime) {
   return credential.user;
 }
 
-async function loadReferenceOptionsFromFirebase() {
-  const runtime = await getReferenceSettingsRuntime();
-  await ensureReferenceSettingsAuth(runtime);
+async function loadLegacyReferenceOptions(runtime) {
   const { db, firestoreModule } = runtime;
-
   const [vehicleSnapshot, driverSnapshot] = await Promise.all([
     firestoreModule.getDoc(firestoreModule.doc(db, REFERENCE_VEHICLE_SETTINGS_DOC.collection, REFERENCE_VEHICLE_SETTINGS_DOC.id)),
     firestoreModule.getDoc(firestoreModule.doc(db, REFERENCE_DRIVER_SETTINGS_DOC.collection, REFERENCE_DRIVER_SETTINGS_DOC.id)),
@@ -409,20 +453,71 @@ async function loadReferenceOptionsFromFirebase() {
   };
 }
 
-async function saveReferenceValues(referenceDoc, values) {
-  const runtime = await getReferenceSettingsRuntime();
-  await ensureReferenceSettingsAuth(runtime);
-  const { db, firestoreModule } = runtime;
-  const normalizedValues = [...new Set(values.map((value) => String(value ?? "").trim()).filter(Boolean))];
+async function saveSyainmeiboReferenceValues(runtime, referenceKind, values) {
+  const referenceConfig = REFERENCE_SOURCE_CONFIG[referenceKind];
+  if (!referenceConfig) {
+    throw new Error(`Unknown reference kind: ${referenceKind}`);
+  }
 
+  const normalizedValues = [...new Set(values.map((value) => String(value ?? "").trim()).filter(Boolean))];
+  const { db, firestoreModule } = runtime;
+  const nowIso = new Date().toISOString();
   await firestoreModule.setDoc(
-    firestoreModule.doc(db, referenceDoc.collection, referenceDoc.id),
+    firestoreModule.doc(db, REFERENCE_SYAINMEIBO_DOC.collection, REFERENCE_SYAINMEIBO_DOC.id),
     {
-      values: normalizedValues,
+      [referenceConfig.primaryFieldName]: normalizedValues,
+      [referenceConfig.metaFieldName]: {
+        valueCount: normalizedValues.length,
+        clientUpdatedAt: nowIso,
+        updatedAt: firestoreModule.serverTimestamp(),
+        source: "launcher-settings",
+      },
       updatedAt: firestoreModule.serverTimestamp(),
     },
     { merge: true }
   );
+  return normalizedValues;
+}
+
+async function loadReferenceOptionsFromFirebase() {
+  const runtime = await getReferenceSettingsRuntime();
+  await ensureReferenceSettingsAuth(runtime);
+  const { db, firestoreModule } = runtime;
+  const syainmeiboSnapshot = await firestoreModule.getDoc(
+    firestoreModule.doc(db, REFERENCE_SYAINMEIBO_DOC.collection, REFERENCE_SYAINMEIBO_DOC.id)
+  );
+  const syainmeiboOptions = syainmeiboSnapshot.exists()
+    ? extractReferenceOptionsFromSyainmeibo(syainmeiboSnapshot.data())
+    : { vehicles: [], drivers: [] };
+
+  if (syainmeiboOptions.vehicles.length && syainmeiboOptions.drivers.length) {
+    return syainmeiboOptions;
+  }
+
+  const legacyOptions = await loadLegacyReferenceOptions(runtime);
+  if (!syainmeiboOptions.vehicles.length && legacyOptions.vehicles.length) {
+    await saveSyainmeiboReferenceValues(runtime, REFERENCE_SOURCE_KIND.VEHICLES, legacyOptions.vehicles);
+  }
+  if (!syainmeiboOptions.drivers.length && legacyOptions.drivers.length) {
+    await saveSyainmeiboReferenceValues(runtime, REFERENCE_SOURCE_KIND.DRIVERS, legacyOptions.drivers);
+  }
+
+  return {
+    vehicles: syainmeiboOptions.vehicles.length ? syainmeiboOptions.vehicles : legacyOptions.vehicles,
+    drivers: syainmeiboOptions.drivers.length ? syainmeiboOptions.drivers : legacyOptions.drivers,
+  };
+}
+
+async function saveReferenceValues(referenceKind, values) {
+  const runtime = await getReferenceSettingsRuntime();
+  await ensureReferenceSettingsAuth(runtime);
+  const referenceConfig = REFERENCE_SOURCE_CONFIG[referenceKind];
+  if (!referenceConfig) {
+    throw new Error(`Unknown reference kind: ${referenceKind}`);
+  }
+  const normalizedValues = [...new Set(values.map((value) => String(value ?? "").trim()).filter(Boolean))];
+
+  await saveSyainmeiboReferenceValues(runtime, referenceKind, normalizedValues);
 
   return normalizedValues;
 }
@@ -539,7 +634,7 @@ async function removeVehicleNumber(value) {
 
   try {
     const nextVehicles = getDisplayedVehicleRows().filter((entry) => entry !== value);
-    const savedVehicles = await saveReferenceValues(REFERENCE_VEHICLE_SETTINGS_DOC, nextVehicles);
+    const savedVehicles = await saveReferenceValues(REFERENCE_SOURCE_KIND.VEHICLES, nextVehicles);
     sharedSettings.saveVehicles(savedVehicles);
 
     if (String(state.shared.current.vehicleNumber || "").trim() === value) {
@@ -563,7 +658,7 @@ async function removeDriverName(value) {
 
   try {
     const nextDrivers = getDisplayedDriverRows().filter((entry) => entry !== value);
-    const savedDrivers = await saveReferenceValues(REFERENCE_DRIVER_SETTINGS_DOC, nextDrivers);
+    const savedDrivers = await saveReferenceValues(REFERENCE_SOURCE_KIND.DRIVERS, nextDrivers);
     sharedSettings.saveDrivers(savedDrivers);
 
     if (String(state.shared.current.driverName || "").trim() === label) {

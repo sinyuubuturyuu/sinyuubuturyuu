@@ -11,6 +11,17 @@
     TRUCK_TYPES: "truckTypes"
   };
   const SETTINGS_BACKUP_SLOT = 1;
+  const SETTINGS_DIRECTORY_DOC_ID = "syainmeibo";
+  const SETTINGS_DIRECTORY_KIND_CONFIG = Object.freeze({
+    [SETTINGS_BACKUP_KIND.VEHICLES]: Object.freeze({
+      valuesField: "車両番号",
+      metaField: "vehiclesMeta"
+    }),
+    [SETTINGS_BACKUP_KIND.DRIVERS]: Object.freeze({
+      valuesField: "乗務員名",
+      metaField: "driversMeta"
+    })
+  });
 
   const state = {
     options: null,
@@ -287,6 +298,39 @@
     return state.db.collection(collection).doc(buildSettingsBackupDocId(kind, slot));
   }
 
+  function getSettingsDirectoryConfig(kind) {
+    return SETTINGS_DIRECTORY_KIND_CONFIG[kind] || null;
+  }
+
+  function isSettingsDirectoryKind(kind) {
+    return Boolean(getSettingsDirectoryConfig(kind));
+  }
+
+  function getSettingsDirectoryDocRef() {
+    if (!state.db) return null;
+    const collection = sanitizeId(state.options.settingsBackupCollection, "monthly_tire_settings_backup");
+    return state.db.collection(collection).doc(SETTINGS_DIRECTORY_DOC_ID);
+  }
+
+  function normalizeSettingsDirectoryBackup(kind, slot, data, metadataOnly) {
+    const config = getSettingsDirectoryConfig(kind);
+    if (!config || !data || typeof data !== "object") return null;
+    const values = normalizeSettingsBackupValues(data[config.valuesField]);
+    if (!values.length) return null;
+
+    const rawMeta = data[config.metaField];
+    const meta = rawMeta && typeof rawMeta === "object" ? rawMeta : {};
+    const valueCount = Number(meta.valueCount);
+    return {
+      kind,
+      slot,
+      valueCount: Number.isFinite(valueCount) && valueCount >= 0 ? Math.floor(valueCount) : values.length,
+      values: metadataOnly ? [] : values,
+      clientUpdatedAt: toIsoOrEmpty(meta.clientUpdatedAt || data.clientUpdatedAt),
+      serverUpdatedAt: toIsoOrEmpty(meta.updatedAt || data.updatedAt)
+    };
+  }
+
   async function ensureFirebaseReady() {
     if (!state.initialized || !state.options || !state.options.enabled) return false;
     if (state.db && state.deviceId) return true;
@@ -382,6 +426,174 @@
     };
   }
 
+  async function saveSettingsDirectoryBackup(kind, slot, values, meta) {
+    const config = getSettingsDirectoryConfig(kind);
+    if (!config) {
+      return { ok: false, reason: "invalid_target", backup: null };
+    }
+
+    const normalizedValues = normalizeSettingsBackupValues(values);
+    if (!normalizedValues.length) {
+      return { ok: false, reason: "empty_values", backup: null };
+    }
+
+    const ready = await ensureFirebaseReady();
+    const docRef = getSettingsDirectoryDocRef();
+    if (!ready || !docRef || !state.firebase) {
+      return { ok: false, reason: "firebase_unready", backup: null };
+    }
+
+    const nowIso = new Date().toISOString();
+    const payload = {
+      [config.valuesField]: normalizedValues,
+      [config.metaField]: {
+        kind,
+        slot,
+        valueCount: normalizedValues.length,
+        clientUpdatedAt: nowIso,
+        updatedAt: state.firebase.firestore.FieldValue.serverTimestamp(),
+        updatedByUid: state.uid || "anon",
+        updatedByDeviceId: state.deviceId || "",
+        meta: meta && typeof meta === "object" ? deepClone(meta) : {}
+      },
+      updatedAt: state.firebase.firestore.FieldValue.serverTimestamp()
+    };
+
+    try {
+      await docRef.set(payload, { merge: true });
+      return {
+        ok: true,
+        reason: "ok",
+        backup: {
+          kind,
+          slot,
+          valueCount: normalizedValues.length,
+          values: normalizedValues,
+          clientUpdatedAt: nowIso,
+          serverUpdatedAt: ""
+        }
+      };
+    } catch (error) {
+      warn("Settings directory save failed", error);
+      return { ok: false, reason: toFirestoreReason(error, "write_failed"), backup: null };
+    }
+  }
+
+  async function loadLegacySettingsBackup(kind, slot, metadataOnly) {
+    const ready = await ensureFirebaseReady();
+    const docRef = getSettingsBackupDocRef(kind, slot);
+    if (!ready || !docRef) {
+      return { ok: false, reason: "firebase_unready", backup: null };
+    }
+
+    try {
+      const snap = await docRef.get();
+      if (!snap.exists) {
+        return { ok: false, reason: "not_found", backup: null };
+      }
+      const backup = normalizeSettingsBackupDoc(kind, slot, snap.data(), metadataOnly);
+      if (!backup) {
+        return { ok: false, reason: "invalid_data", backup: null };
+      }
+      return { ok: true, reason: "ok", backup };
+    } catch (error) {
+      warn("Settings backup load failed", error);
+      return { ok: false, reason: toFirestoreReason(error, "read_failed"), backup: null };
+    }
+  }
+
+  async function loadSettingsDirectoryBackup(kind, slot, metadataOnly) {
+    const config = getSettingsDirectoryConfig(kind);
+    if (!config) {
+      return { ok: false, reason: "invalid_target", backup: null };
+    }
+
+    const ready = await ensureFirebaseReady();
+    const docRef = getSettingsDirectoryDocRef();
+    if (!ready || !docRef) {
+      return { ok: false, reason: "firebase_unready", backup: null };
+    }
+
+    try {
+      const snap = await docRef.get();
+      if (!snap.exists) {
+        return { ok: false, reason: "not_found", backup: null };
+      }
+      const backup = normalizeSettingsDirectoryBackup(kind, slot, snap.data(), metadataOnly);
+      if (!backup) {
+        return { ok: false, reason: "not_found", backup: null };
+      }
+      return { ok: true, reason: "ok", backup };
+    } catch (error) {
+      warn("Settings directory load failed", error);
+      return { ok: false, reason: toFirestoreReason(error, "read_failed"), backup: null };
+    }
+  }
+
+  async function migrateLegacySettingsDirectoryBackup(kind, slot) {
+    const legacyResult = await loadLegacySettingsBackup(kind, slot, false);
+    if (!legacyResult.ok || !legacyResult.backup) {
+      return legacyResult;
+    }
+    return saveSettingsDirectoryBackup(kind, slot, legacyResult.backup.values, { source: "legacy_migration" });
+  }
+
+  async function deleteLegacySettingsBackup(kind, slot) {
+    const ready = await ensureFirebaseReady();
+    const docRef = getSettingsBackupDocRef(kind, slot);
+    if (!ready || !docRef) {
+      return { ok: false, reason: "firebase_unready" };
+    }
+
+    try {
+      const snap = await docRef.get();
+      if (!snap.exists) {
+        return { ok: false, reason: "not_found" };
+      }
+      await docRef.delete();
+      return { ok: true, reason: "ok" };
+    } catch (error) {
+      warn("Legacy settings backup delete failed", error);
+      return { ok: false, reason: toFirestoreReason(error, "delete_failed") };
+    }
+  }
+
+  async function deleteSettingsDirectoryBackup(kind, slot) {
+    const config = getSettingsDirectoryConfig(kind);
+    if (!config) {
+      return { ok: false, reason: "invalid_target" };
+    }
+
+    const legacyDeleteResult = await deleteLegacySettingsBackup(kind, slot);
+    if (!legacyDeleteResult.ok && legacyDeleteResult.reason !== "not_found") {
+      return legacyDeleteResult;
+    }
+
+    const ready = await ensureFirebaseReady();
+    const docRef = getSettingsDirectoryDocRef();
+    if (!ready || !docRef || !state.firebase) {
+      return { ok: false, reason: "firebase_unready" };
+    }
+
+    try {
+      const snap = await docRef.get();
+      const backup = snap.exists ? normalizeSettingsDirectoryBackup(kind, slot, snap.data(), false) : null;
+      if (!backup) {
+        return legacyDeleteResult.ok ? { ok: true, reason: "ok" } : { ok: false, reason: "not_found" };
+      }
+
+      await docRef.update({
+        [config.valuesField]: state.firebase.firestore.FieldValue.delete(),
+        [config.metaField]: state.firebase.firestore.FieldValue.delete(),
+        updatedAt: state.firebase.firestore.FieldValue.serverTimestamp()
+      });
+      return { ok: true, reason: "ok" };
+    } catch (error) {
+      warn("Settings directory delete failed", error);
+      return { ok: false, reason: toFirestoreReason(error, "delete_failed") };
+    }
+  }
+
   async function saveSettingsBackup(kind, slot, values, meta) {
     const normalizedKind = normalizeSettingsBackupKind(kind);
     const normalizedSlot = normalizeSettingsBackupSlot(slot);
@@ -391,6 +603,9 @@
     const normalizedValues = normalizeSettingsBackupValues(values);
     if (!normalizedValues.length) {
       return { ok: false, reason: "empty_values", backup: null };
+    }
+    if (isSettingsDirectoryKind(normalizedKind)) {
+      return saveSettingsDirectoryBackup(normalizedKind, normalizedSlot, normalizedValues, meta);
     }
 
     const ready = await ensureFirebaseReady();
@@ -441,26 +656,23 @@
       return { ok: false, reason: "invalid_target", backup: null };
     }
 
-    const ready = await ensureFirebaseReady();
-    const docRef = getSettingsBackupDocRef(normalizedKind, normalizedSlot);
-    if (!ready || !docRef) {
-      return { ok: false, reason: "firebase_unready", backup: null };
+    if (isSettingsDirectoryKind(normalizedKind)) {
+      const directoryResult = await loadSettingsDirectoryBackup(normalizedKind, normalizedSlot, metadataOnly);
+      if (directoryResult.ok || directoryResult.reason !== "not_found") {
+        return directoryResult;
+      }
+
+      const migrateResult = await migrateLegacySettingsDirectoryBackup(normalizedKind, normalizedSlot);
+      if (!migrateResult.ok) {
+        return migrateResult.reason === "not_found"
+          ? directoryResult
+          : { ok: false, reason: migrateResult.reason || "read_failed", backup: null };
+      }
+
+      return loadSettingsDirectoryBackup(normalizedKind, normalizedSlot, metadataOnly);
     }
 
-    try {
-      const snap = await docRef.get();
-      if (!snap.exists) {
-        return { ok: false, reason: "not_found", backup: null };
-      }
-      const backup = normalizeSettingsBackupDoc(normalizedKind, normalizedSlot, snap.data(), metadataOnly);
-      if (!backup) {
-        return { ok: false, reason: "invalid_data", backup: null };
-      }
-      return { ok: true, reason: "ok", backup };
-    } catch (error) {
-      warn("Settings backup load failed", error);
-      return { ok: false, reason: toFirestoreReason(error, "read_failed"), backup: null };
-    }
+    return loadLegacySettingsBackup(normalizedKind, normalizedSlot, metadataOnly);
   }
 
   async function listSettingsBackups(kind) {
@@ -487,23 +699,11 @@
       return { ok: false, reason: "invalid_target" };
     }
 
-    const ready = await ensureFirebaseReady();
-    const docRef = getSettingsBackupDocRef(normalizedKind, normalizedSlot);
-    if (!ready || !docRef) {
-      return { ok: false, reason: "firebase_unready" };
+    if (isSettingsDirectoryKind(normalizedKind)) {
+      return deleteSettingsDirectoryBackup(normalizedKind, normalizedSlot);
     }
 
-    try {
-      const snap = await docRef.get();
-      if (!snap.exists) {
-        return { ok: false, reason: "not_found" };
-      }
-      await docRef.delete();
-      return { ok: true, reason: "ok" };
-    } catch (error) {
-      warn("Settings backup delete failed", error);
-      return { ok: false, reason: toFirestoreReason(error, "delete_failed") };
-    }
+    return deleteLegacySettingsBackup(normalizedKind, normalizedSlot);
   }
 
   async function loadLatestState(options) {
