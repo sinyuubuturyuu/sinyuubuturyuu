@@ -1,4 +1,4 @@
-const CACHE_NAME = "monthly-tire-check-v42";
+const CACHE_NAME = "monthly-tire-check-v46";
 const ASSETS = [
   "./",
   "./index.html",
