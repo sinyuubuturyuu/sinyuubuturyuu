@@ -16,8 +16,9 @@
     messagingSenderId: "273561411339",
     appId: "1:273561411339:web:5586a980cd0c6d79ec0c0e"
   });
-  const POINT_SUMMARY_CACHE_TTL_MS = 15000;
-  const PAGE_SHOW_REFRESH_INTERVAL_MS = 20000;
+  const LAST_AWARD_KEY = "driver.points.last_award_at.v1";
+  const POINT_SUMMARY_CACHE_TTL_MS = 5000;
+  const PAGE_SHOW_REFRESH_INTERVAL_MS = 5000;
   const BADGE_REFRESH_DEBOUNCE_MS = 120;
 
   const uiState = {
@@ -106,6 +107,19 @@
       return;
     }
     console.info("[DriverPoints]", message, extra);
+  }
+
+  function getLastAwardAtMs() {
+    const raw = window.localStorage.getItem(LAST_AWARD_KEY);
+    if (!raw) {
+      return 0;
+    }
+    const time = new Date(raw).getTime();
+    return Number.isFinite(time) ? time : 0;
+  }
+
+  function markPointAwarded() {
+    window.localStorage.setItem(LAST_AWARD_KEY, new Date().toISOString());
   }
 
   function getCachedSummary(identity) {
@@ -256,10 +270,19 @@
     }
 
     const runtime = await ensureRuntime();
-    const { doc, getDoc } = runtime.firestoreModule;
-    const snapshot = await getDoc(
-      doc(runtime.db, STORAGE_TARGET.collection, buildSummaryDocId(identity))
-    );
+    const { doc, getDoc, getDocFromServer } = runtime.firestoreModule;
+    const summaryRef = doc(runtime.db, STORAGE_TARGET.collection, buildSummaryDocId(identity));
+    let snapshot;
+
+    if (options.force === true && typeof getDocFromServer === "function") {
+      try {
+        snapshot = await getDocFromServer(summaryRef);
+      } catch (error) {
+        snapshot = await getDoc(summaryRef);
+      }
+    } else {
+      snapshot = await getDoc(summaryRef);
+    }
     const data = snapshot.exists() ? snapshot.data() : {};
     const summary = {
       ok: true,
@@ -382,6 +405,7 @@
     invalidateCachedSummary(identity);
     const appliedAwards = result.awards.filter((award) => award.applied);
     if (appliedAwards.length) {
+      markPointAwarded();
       logInfo("Saved driver points", {
         projectId: FIREBASE_CONFIG.projectId,
         collection: STORAGE_TARGET.collection,
@@ -658,9 +682,12 @@
       return;
     }
 
+    const hasPendingAwardRefresh = getLastAwardAtMs() > uiState.lastBadgeSyncAt;
+
     if (
       options.reason === "pageshow"
       && options.force !== true
+      && !hasPendingAwardRefresh
       && (Date.now() - uiState.lastBadgeSyncAt) < PAGE_SHOW_REFRESH_INTERVAL_MS
     ) {
       return;
@@ -679,7 +706,7 @@
 
     try {
       const summary = await readDriverPoints(selection.driverName, selection.vehicleNumber, {
-        force: options.force === true
+        force: options.force === true || hasPendingAwardRefresh
       });
       if (refreshToken !== uiState.badgeRefreshToken) {
         return;
