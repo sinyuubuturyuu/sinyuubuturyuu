@@ -804,6 +804,9 @@
 
     const label = section.querySelector(".field > span");
     if (label) {
+      label.remove();
+    }
+    if (label) {
       label.textContent = "ポイント付与";
     }
 
