@@ -1,9 +1,10 @@
-const CACHE_NAME = "sinyuubuturyuu-launcher-v8";
+const CACHE_NAME = "sinyuubuturyuu-launcher-v12";
 const APP_SHELL = [
   "./",
   "./index.html",
   "./launcher.css",
   "./launcher.js",
+  "./driver-points/driver-points.js?v=20260316-5",
   "./manifest.webmanifest",
   "./sinyuubuturyuu-icon.png",
   "./apple-touch-icon.png",
@@ -15,6 +16,7 @@ const NETWORK_FIRST_PATH_SUFFIXES = [
   "/index.html",
   "/launcher.css",
   "/launcher.js",
+  "/driver-points/driver-points.js",
   "/manifest.webmanifest",
 ];
 

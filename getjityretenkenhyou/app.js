@@ -1800,6 +1800,7 @@
             return;
           }
         }
+        await awardDriverPointsForMonthlyTire(previousSnapshot);
         rememberSubmittedMonth(previousSnapshot);
         const monthAvailability = buildMonthAvailabilityFor(previousSnapshot);
         resetCurrent({ confirm: false, toast: false });
@@ -1809,6 +1810,35 @@
         }
         await showSendFarewell();
         returnToLauncherHome();
+      }
+
+      async function awardDriverPointsForMonthlyTire(snapshot) {
+        const driverPoints = window.DriverPoints;
+        if (!driverPoints || typeof driverPoints.awardMonthlyTireInspection !== "function") {
+          return;
+        }
+
+        const driverName = normalizeDriverName(snapshot && snapshot.driverName);
+        const vehicleNumber = String(snapshot && snapshot.vehicleNumber ? snapshot.vehicleNumber : "").trim();
+        const targetMonth = normalizeMonthKey(
+          (snapshot && snapshot.targetMonth) || monthKeyFromDateText(snapshot && snapshot.inspectionDate)
+        );
+
+        if (!driverName || !vehicleNumber || !targetMonth) {
+          return;
+        }
+
+        try {
+          await driverPoints.awardMonthlyTireInspection({
+            driverName,
+            vehicleNumber,
+            targetMonth,
+            inspectionDate: snapshot && snapshot.inspectionDate,
+            sentAt: new Date().toISOString()
+          });
+        } catch (error) {
+          console.warn("Failed to award driver points for monthly tire inspection:", error);
+        }
       }
 
       function resetCurrent(options = {}) {

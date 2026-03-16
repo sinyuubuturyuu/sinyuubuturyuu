@@ -1,4 +1,4 @@
-const CACHE_NAME = "monthly-tire-check-v36";
+const CACHE_NAME = "monthly-tire-check-v40";
 const ASSETS = [
   "./",
   "./index.html",
@@ -17,6 +17,7 @@ const ASSETS = [
 const NETWORK_FIRST_PATH_SUFFIXES = [
   "/app.js",
   "/styles.css",
+  "/driver-points/driver-points.js",
   "/manifest.webmanifest"
 ];
 

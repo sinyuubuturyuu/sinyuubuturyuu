@@ -303,6 +303,7 @@ async function submitSend(sendPlan = null, maintenanceNote = "") {
 
   try {
     await state.store.saveRecord(payload);
+    await awardDriverPointsForDailyInspection(activeSendPlan);
     state.recordsByMonth[month] = payload;
     const remainingDays = state.pendingDays.filter((day) => !completeDays.includes(day));
     const remainingDraft = pickDraftDays(monthDraft, remainingDays);
@@ -326,6 +327,34 @@ async function submitSend(sendPlan = null, maintenanceNote = "") {
     setInspectionStatus(`送信に失敗しました: ${error.message}`, true);
   } finally {
     toggleBusy(elements.sendButton, false, "送信");
+  }
+}
+
+async function awardDriverPointsForDailyInspection(sendPlan) {
+  const driverPoints = window.DriverPoints;
+  if (!driverPoints || typeof driverPoints.awardDailyInspection !== "function") {
+    return;
+  }
+
+  const driverName = String(state.session?.driver || sendPlan?.payload?.driver || "").trim();
+  const vehicleNumber = String(state.session?.vehicle || sendPlan?.payload?.vehicle || "").trim();
+  const month = String(sendPlan?.month || "").trim();
+  const completeDays = Array.isArray(sendPlan?.completeDays) ? sendPlan.completeDays : [];
+
+  if (!driverName || !vehicleNumber || !month || !completeDays.length) {
+    return;
+  }
+
+  try {
+    await driverPoints.awardDailyInspection({
+      driverName,
+      vehicleNumber,
+      month,
+      completeDays,
+      sentAt: new Date().toISOString()
+    });
+  } catch (error) {
+    console.warn("Failed to award driver points for daily inspection:", error);
   }
 }
 
